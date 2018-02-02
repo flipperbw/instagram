@@ -37,14 +37,21 @@ while more and i < maxim:
     if maxid:
         url += '&max_id={}'.format(maxid)
     
-    q = requests.get(url)
+    i += 1
 
-    #this fails sometimes on the json part i guess
-    u = q.json().get('user', {}).get('media')
+    q = requests.get(url)
+    if q.status_code != 200:
+        sleep(1)
+        continue
+
+    try:
+        u = q.json().get('user', {}).get('media')
+    except:
+        sleep(1)
+        continue
 
     p = u.get('page_info')
     maxid = p.get('end_cursor')
-    i += 1
     more = p.get('has_next_page')
 
     now_time = datetime.now(pytz.utc).astimezone(local_tz).strftime('%Y-%m-%d %H:%M:%S')
@@ -66,6 +73,5 @@ while more and i < maxim:
         #print '{}|{}|{}|{}|{}|{}|{}'.format(now_time, date_fmt, li, is_vid, code, ca_safe, im)
         print '{}|{}|{}|{}|{}'.format(now_time, date_fmt, li, is_vid, code)
         
-    sleep(0.3)
-
+    sleep(1)
 
