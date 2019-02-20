@@ -6,9 +6,9 @@ import os
 import pickle
 import sys
 import time
-from typing import Dict, List, Union
-from pprint import pformat
 from datetime import datetime
+from pprint import pformat
+from typing import Dict, List, Union
 
 import requests
 from utils.logs import log_init
@@ -389,8 +389,10 @@ def main():
     if data is not None:
         prof, media = data
         html = scraper.gen_html(prof, media)
-        with open('html/' + user + '.html', 'w') as f:
+        filename = 'html/' + user + '.html'
+        with open(filename, 'w') as f:
             f.writelines(html)
+            lo.s(f'Wrote to {filename}')
 
     lo.s('Done')
 
