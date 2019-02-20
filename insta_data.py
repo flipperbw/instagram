@@ -1,5 +1,4 @@
-#!/usr/bin/env python
-# coding: utf-8
+#!/usr/bin/env python3
 
 import json
 import requests
@@ -11,7 +10,7 @@ import pytz
 #import string
 
 if len(sys.argv) < 2:
-    print 'input insta name'
+    print('input insta name')
     sys.exit()
 
 name = sys.argv[1]
@@ -71,7 +70,7 @@ while more and i < maxim:
         date_fmt = datetime.utcfromtimestamp(da).replace(tzinfo=pytz.utc).astimezone(local_tz).strftime('%Y-%m-%d %H:%M:%S')
         
         #print '{}|{}|{}|{}|{}|{}|{}'.format(now_time, date_fmt, li, is_vid, code, ca_safe, im)
-        print '{}|{}|{}|{}|{}'.format(now_time, date_fmt, li, is_vid, code)
+        print('{}|{}|{}|{}|{}'.format(now_time, date_fmt, li, is_vid, code))
         
     sleep(1)
 
