@@ -10,11 +10,12 @@ from datetime import datetime
 from pprint import pformat
 from typing import Dict, List, Union
 from mimetypes import guess_extension
+from glob import glob
 
 import requests
 from utils.logs import log_init
 
-lo = log_init('INFO')
+lo = log_init('DEBUG')
 
 # todo: save data as pickle and load
 # todo: lazyload images
@@ -22,12 +23,12 @@ lo = log_init('INFO')
 # - Vars
 
 MAX_PAGES = 2
-MAX_IMGS = 40
+MAX_IMGS = 5
 
 # -
 
 SLEEP_DELAY = 1
-CONNECT_TIMEOUT = 10
+CONNECT_TIMEOUT = 3
 MAX_RETRIES = 5
 RETRY_DELAY = 2
 
@@ -37,8 +38,12 @@ GQL_VARS = '{{"id":"{0}","first":50,"after":"{1}"}}'
 
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.87 Safari/537.36'
 
+COOKIE_NAME = 'cookies'
+
 HTML_DIR = 'html/'
-THUMB_DIR = HTML_DIR + 'thumbs/'
+IMGS_DIR = HTML_DIR + 'imgs/'
+THUMB_DIR = IMGS_DIR + 'thumbs/'
+
 
 class PartialContentException(Exception):
     pass
@@ -61,6 +66,10 @@ class Media:
         self.captions: List[str] = info['captions']
         self.dimensions: Dict[str, int] = info['dimensions']  # height, width
         self.location: Dict[str, Union[str, bool]] = info['location']  # id: int, has_public_page: bool, name: str, slug: str
+
+        #self.mimetype: str = None
+        self.filename: str = None
+        #self.content = None  # todo do i need this? and make these all thumb_
 
     def __str__(self):
         return f'Code: {self.shortcode}, Likes: {self.likes}, Vid: {self.is_video}'
@@ -101,7 +110,7 @@ class InstaGet:
     def _set_last(self):
         self.last_request = time.time()
 
-    def safe_get(self, url: str):
+    def safe_get(self, url: str, stream: bool = False):
         tries = 0
         retry_delay = RETRY_DELAY
 
@@ -109,18 +118,21 @@ class InstaGet:
             self._sleep()
 
             try:
-                response = self.session.get(url, timeout=CONNECT_TIMEOUT, cookies=self.cookies)
+                response = self.session.get(
+                    url, timeout=CONNECT_TIMEOUT, cookies=self.cookies, stream=stream
+                )
                 if response.status_code == 404:
                     return
                 response.raise_for_status()
 
-                content_length = response.headers.get('Content-Length')
-                if content_length is not None and len(response.content) != int(content_length):
-                    raise PartialContentException('Partial response')
+                if not stream:
+                    content_length = response.headers.get('Content-Length')
+                    if content_length is not None and len(response.content) != int(content_length):
+                        raise PartialContentException('Partial response')
 
             except (requests.exceptions.RequestException, PartialContentException) as e:
                 if tries < MAX_RETRIES:
-                    lo.w('Retrying after {} for exception {} on {}...'.format(retry_delay, repr(e), url))
+                    lo.w('Retrying after {} seconds for exception {} on {}...'.format(retry_delay, repr(e), url))
                     self._sleep(retry_delay)
                     self._set_last()
                     retry_delay *= 2
@@ -135,21 +147,41 @@ class InstaGet:
                 self._set_last()
                 return response
 
-    def save_media(self, url: str, name: str):
-        img_data = self.safe_get(url)
-        if '.' not in name:
-            ext = guess_extension(img_data.headers['content-type'].partition(';')[0].strip())
+    def save_media(self, media: Media):
+        shortcode = media.shortcode
+
+        matches = glob(THUMB_DIR + shortcode + '.*')
+        matches_num = len(matches)
+
+        if matches_num == 1:  # more checks here on size, or set saved on media
+            lo.d(f'{matches[0]} already saved, skipping.')
+
+        elif matches_num > 1:
+            lo.w(f'Found multiple files for {shortcode}: {", ".join(matches)}. Using {matches[0]}.')
+
+        else:
+
+            lo.d(f'Retrieving thumbnail for {shortcode}...')
+
+            img_data = self.safe_get(media.thumbnail_src)
+
+            ext = guess_extension(img_data.headers.get('content-type', '').partition(';')[0].strip())
             if not ext:
                 ext = ''
             elif ext == '.jpe':
                 ext = '.jpg'
-            name += ext
-        with open(name, 'wb') as f:
-            f.write(img_data.content)
 
-    def save_all(self, media: List[Media]):
-        for m in media:
-            self.save_media(m.thumbnail_src, m.shortcode)
+            #media.mimetype = ext
+            media.filename = shortcode + ext
+            #media.content = img_data.content
+
+            if not filepath:
+                filepath = THUMB_DIR + media.filename
+
+            with open(filepath, 'wb') as f:
+                f.write(media.content)
+
+            lo.d(f'Saved {media.filename}')
 
     def get_txt(self, url: str, is_json: bool = False):
         resp = self.safe_get(url)
@@ -290,7 +322,7 @@ class InstaGet:
 
         first_page_data = self.get_media(page_data)
 
-        lo.v('\n' + pformat(first_page_data, indent=4))
+        #lo.v('\n' + pformat(first_page_data, indent=4))
 
         all_media = first_page_data['media_list']
 
@@ -301,7 +333,7 @@ class InstaGet:
 
         pnum = 2
 
-        while pnum <= MAX_PAGES:  # do max items instead
+        while pnum <= MAX_PAGES:  # do max items instead? or always 50
             if not has_next:
                 lo.w('No more entries.')
                 return
@@ -310,7 +342,7 @@ class InstaGet:
 
             gql_data = self.get_gql(profile_id, end_cursor)
 
-            lo.v('\n' + pformat(gql_data, indent=4))
+            #lo.v('\n' + pformat(gql_data, indent=4))
 
             all_media += gql_data['media_list']
 
@@ -325,12 +357,10 @@ class InstaGet:
 
 
     @staticmethod
-    def gen_html(prof: dict, media: List[Media]):
-        #move to jinja
+    def gen_html(prof: dict, media_sort: List[Media]):
+        #todo move to jinja
 
         lo.i('Creating html...')
-
-        media_sort = sorted(media, key=lambda x: x.likes, reverse=True)[:50]
 
         header = '''<html><head>
 <style>
@@ -371,6 +401,7 @@ class InstaGet:
         for m in media_sort:
             m_date = m.taken_at_timestamp
             str_date = datetime.utcfromtimestamp(m_date).strftime('%b %d, %y')
+            thumb_url = THUMB_DIR + m.filename
 
             # todo add more data
             #      handle video
@@ -392,7 +423,7 @@ class InstaGet:
         </div>
     </div>'''.format(
                 big_url = m.display_url,
-                small_url = m.thumbnail_src,
+                small_url = thumb_url,
                 caption = '<br /'.join(m.captions),
                 likes = m.likes,
                 date = str_date
@@ -404,7 +435,7 @@ class InstaGet:
 
 
 def main():
-    scraper = InstaGet(cookiejar='cookies')
+    scraper = InstaGet(cookiejar=COOKIE_NAME)
 
     user = sys.argv[1]
 
@@ -413,9 +444,18 @@ def main():
 
     if data is not None:
         prof, media = data
-        scraper.save_media(media)
-        html = scraper.gen_html(prof, media)
-        filename = 'html/' + user + '.html'
+
+        media_sort = sorted(media, key=lambda x: x.likes, reverse=True)
+        if MAX_IMGS is not None:
+            media_sort = media_sort[:MAX_IMGS]
+
+        lo.i(f'Saving images ({len(media_sort)})...')
+        for m in media_sort:
+            scraper.save_media(m)
+
+        html = scraper.gen_html(prof, media_sort)
+
+        filename = HTML_DIR + user + '.html'
         with open(filename, 'w') as f:
             f.writelines(html)
             lo.s(f'Wrote to {filename}')
