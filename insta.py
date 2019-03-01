@@ -9,6 +9,7 @@ import time
 from datetime import datetime
 from pprint import pformat
 from typing import Dict, List, Union
+from mimetypes import guess_extension
 
 import requests
 from utils.logs import log_init
@@ -16,20 +17,28 @@ from utils.logs import log_init
 lo = log_init('INFO')
 
 # todo: save data as pickle and load
+# todo: lazyload images
 
-BASE_URL = 'https://www.instagram.com/'
-GQL_URL = BASE_URL + 'graphql/query/?query_hash=f2405b236d85e8296cf30347c9f08c2a&variables={}'
-GQL_VARS = '{{"id":"{0}","first":50,"after":"{1}"}}'
+# - Vars
 
 MAX_PAGES = 2
-MAX_IMGS = 40  # todo: make this lazyload
+MAX_IMGS = 40
+
+# -
 
 SLEEP_DELAY = 1
 CONNECT_TIMEOUT = 10
 MAX_RETRIES = 5
 RETRY_DELAY = 2
 
+BASE_URL = 'https://www.instagram.com/'
+GQL_URL = BASE_URL + 'graphql/query/?query_hash=f2405b236d85e8296cf30347c9f08c2a&variables={}'
+GQL_VARS = '{{"id":"{0}","first":50,"after":"{1}"}}'
+
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.87 Safari/537.36'
+
+HTML_DIR = 'html/'
+THUMB_DIR = HTML_DIR + 'thumbs/'
 
 class PartialContentException(Exception):
     pass
@@ -125,6 +134,22 @@ class InstaGet:
             else:
                 self._set_last()
                 return response
+
+    def save_media(self, url: str, name: str):
+        img_data = self.safe_get(url)
+        if '.' not in name:
+            ext = guess_extension(img_data.headers['content-type'].partition(';')[0].strip())
+            if not ext:
+                ext = ''
+            elif ext == '.jpe':
+                ext = '.jpg'
+            name += ext
+        with open(name, 'wb') as f:
+            f.write(img_data.content)
+
+    def save_all(self, media: List[Media]):
+        for m in media:
+            self.save_media(m.thumbnail_src, m.shortcode)
 
     def get_txt(self, url: str, is_json: bool = False):
         resp = self.safe_get(url)
@@ -315,16 +340,16 @@ class InstaGet:
     img { max-width: 100%; max-height: 490px; width: auto; height: auto; }
     .hidden { transition: opacity 200ms ease-out; transition-delay: 0s; opacity: 0; filter: blur(0); }
     div.txt { display: none; }
-    span.likes, .lum-lightbox-caption, .datedown span { color: white; font: bold 22px Helvetica, Sans-Serif; background: rgba(0, 0, 0, 0.5); padding: 8px; overflow-wrap: break-word;  -webkit-font-smoothing: antialiased; }
+    span.likes, .lum-lightbox-caption, .datedown span { color: white; font: bold 22px Helvetica, Sans-Serif; background: rgba(0, 0, 0, 0.6); padding: 8px; overflow-wrap: break-word;  -webkit-font-smoothing: antialiased; }
     span.likes { position: absolute; bottom: 0px; left: 0; display: block; }
-    .lum-lightbox-caption { margin: 16px 150px; }
+    .lum-lightbox-caption { margin: 8px 150px; }
     div.datedown { position: absolute; bottom: 0px; right: 0; }
     div.datedown span { display: inline-block; }
     div.datedown span.ico { font-size: 27px; line-height: 23px; padding: 10px 12px; text-shadow: #000 0px 0px 4px; }
     span.dates { font-size: 18px; padding-top: 11px; padding-bottom: 11px; }
     [data-icon]:before { font-family: Segoe UI Symbol; vertical-align: text-bottom; content: attr(data-icon); }
     .lum-lightbox-inner { background-color: rgba(0,0,0,0.6); }
-    .lum-lightbox-inner img { height: calc(100% - 3em + 16px); }
+    .lum-lightbox-inner img { height: calc(100% - 3em + 32px); }
     .lum-lightbox-caption { text-shadow: -1px -1px 3px #000, 1px -1px 3px #000, -1px 1px 3px #000, 1px 1px 3px #000; }
 </style>
 </head>
@@ -388,6 +413,7 @@ def main():
 
     if data is not None:
         prof, media = data
+        scraper.save_media(media)
         html = scraper.gen_html(prof, media)
         filename = 'html/' + user + '.html'
         with open(filename, 'w') as f:
