@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Instagram Images</title>
+
+    <style>
+        div.cont { display: inline-flex; width: 24%; position: relative; justify-content: center; margin-bottom: 15px; padding: 0 5px; }
+        div.img { position: relative; }
+        div.img:hover .hidden { opacity: 1; transition-delay: 0.3s; }
+        img { max-width: 100%; max-height: 490px; width: auto; height: auto; }
+        .hidden { transition: opacity 200ms ease-out; transition-delay: 0s; opacity: 0; filter: blur(0); }
+        div.txt { display: none; }
+        span.likes, .lum-lightbox-caption, .datedown span { color: white; font: bold 22px Helvetica, Sans-Serif; background: rgba(0, 0, 0, 0.6); padding: 8px; overflow-wrap: break-word;  -webkit-font-smoothing: antialiased; }
+        span.likes { position: absolute; bottom: 0px; left: 0; display: block; }
+        .lum-lightbox-caption { margin: 8px 150px; }
+        div.datedown { position: absolute; bottom: 0px; right: 0; }
+        div.datedown span { display: inline-block; }
+        div.datedown span.ico { font-size: 27px; line-height: 23px; padding: 10px 12px; text-shadow: #000 0px 0px 4px; cursor: pointer; }
+        span.dates { font-size: 18px; padding-top: 11px; padding-bottom: 11px; }
+        [data-icon]:before { font-family: Segoe UI Symbol; vertical-align: text-bottom; content: attr(data-icon); }
+        .lum-lightbox-inner { background-color: rgba(0,0,0,0.6); }
+        .lum-lightbox-inner img { height: calc(100% - 3em + 32px); }
+        .lum-lightbox-caption { text-shadow: -1px -1px 3px #000, 1px -1px 3px #000, -1px 1px 3px #000, 1px 1px 3px #000; }
+    </style>
+
+    <script>
+        function forceDownload(blob, filename) {
+            var a = document.createElement('a');
+            a.download = filename;
+            a.href = blob;
+            // For Firefox https://stackoverflow.com/a/32226068
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        }
+
+        // Current blob size limit is around 500MB for browsers
+        function downloadResource(url, filename) {
+            if (!filename) filename = url.split('\\\\').pop().split('/').pop().split('?')[0];
+            fetch(url, {
+                headers: new Headers({
+                    'Origin': location.origin
+                }),
+                mode: 'cors'
+            })
+            .then(response => response.blob())
+            .then(blob => {
+                let blobUrl = window.URL.createObjectURL(blob);
+                forceDownload(blobUrl, filename);
+            })
+            .catch(e => console.error(e));
+        }
+    </script>
+</head>
+<body>
+    {% for data in all_data %}
+    <div class="cont">
+        <div class="img">
+            <a class="zimg" href="{{ data.big_url }}">
+                <img src="{{ data.small_url }}" />
+                <div class="txt hidden">{{ data.caption }}</div>
+            </a>
+            <span class="likes">{{ "${:,}".format(data.likes) }}</span>
+            <div class="datedown hidden">
+                <span class="dates">{{ data.date }}</span>
+                <a target="_blank" href="{{ data.big_url }}">
+                    <span data-icon="&#127758;" class="ico" />
+                </a>
+                <span data-icon="&#128190;" class="ico" onclick="downloadResource('{{ data.save_url }}')"/>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/luminous-lightbox/1.0.1/Luminous.min.js"></script>
+    <script>
+        var cap_fn = function(trigger) { return trigger.querySelector('div.txt').innerText; };
+        var opt = { openTrigger: 'click', closeTrigger: 'click', caption: cap_fn };
+        for (var a of document.querySelectorAll('a.zimg')) {
+            new Luminous(a, opt);
+        }
+    </script>
+</body>
+</html>

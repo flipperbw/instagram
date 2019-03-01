@@ -12,6 +12,7 @@ from typing import Dict, List, Union
 from mimetypes import guess_extension
 from glob import glob
 import re
+from jinja2 import Environment, FileSystemLoader
 
 import requests
 from utils.logs import log_init
@@ -42,11 +43,14 @@ USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, li
 COOKIE_NAME = 'cookies'
 
 SAVE_THUMBS = True
-HTML_DIR = 'html/'
+HTML_DIRNAME = 'html/'
 IMGS_DIRNAME = 'imgs/'
 THUMB_DIRNAME = 'thumbs/'
+TEMPLATE_DIRNAME = 'templates/'
+HTML_DIR = HTML_DIRNAME
 IMGS_DIR = HTML_DIR + IMGS_DIRNAME
 THUMB_DIR = IMGS_DIR + THUMB_DIRNAME
+TEMPLATE_DIR = HTML_DIR + TEMPLATE_DIRNAME
 
 
 class PartialContentException(Exception):
@@ -366,71 +370,10 @@ class InstaGet:
 
         re_html = re.compile(r'^{}'.format(HTML_DIR))
 
-        header = '''<html><head>
-<style>
-    div.cont { display: inline-flex; width: 24%; position: relative; justify-content: center; margin-bottom: 15px; padding: 0 5px; }
-    div.img { position: relative; }
-    div.img:hover .hidden { opacity: 1; transition-delay: 0.3s; }
-    img { max-width: 100%; max-height: 490px; width: auto; height: auto; }
-    .hidden { transition: opacity 200ms ease-out; transition-delay: 0s; opacity: 0; filter: blur(0); }
-    div.txt { display: none; }
-    span.likes, .lum-lightbox-caption, .datedown span { color: white; font: bold 22px Helvetica, Sans-Serif; background: rgba(0, 0, 0, 0.6); padding: 8px; overflow-wrap: break-word;  -webkit-font-smoothing: antialiased; }
-    span.likes { position: absolute; bottom: 0px; left: 0; display: block; }
-    .lum-lightbox-caption { margin: 8px 150px; }
-    div.datedown { position: absolute; bottom: 0px; right: 0; }
-    div.datedown span { display: inline-block; }
-    div.datedown span.ico { font-size: 27px; line-height: 23px; padding: 10px 12px; text-shadow: #000 0px 0px 4px; cursor: pointer; }
-    span.dates { font-size: 18px; padding-top: 11px; padding-bottom: 11px; }
-    [data-icon]:before { font-family: Segoe UI Symbol; vertical-align: text-bottom; content: attr(data-icon); }
-    .lum-lightbox-inner { background-color: rgba(0,0,0,0.6); }
-    .lum-lightbox-inner img { height: calc(100% - 3em + 32px); }
-    .lum-lightbox-caption { text-shadow: -1px -1px 3px #000, 1px -1px 3px #000, -1px 1px 3px #000, 1px 1px 3px #000; }
-</style>
+        env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
+        template = env.get_template('template.html')
 
-<script>
-    function forceDownload(blob, filename) {
-        var a = document.createElement('a');
-        a.download = filename;
-        a.href = blob;
-        // For Firefox https://stackoverflow.com/a/32226068
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-    }
-    
-    // Current blob size limit is around 500MB for browsers
-    function downloadResource(url, filename) {
-        if (!filename) filename = url.split('\\\\').pop().split('/').pop().split('?')[0];
-        fetch(url, {
-            headers: new Headers({
-                'Origin': location.origin
-            }),
-            mode: 'cors'
-        })
-        .then(response => response.blob())
-        .then(blob => {
-            let blobUrl = window.URL.createObjectURL(blob);
-            forceDownload(blobUrl, filename);
-        })
-        .catch(e => console.error(e));
-    }
-</script>
-</head>
-<body>'''
-
-        footer = '''
-    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/luminous-lightbox/1.0.1/Luminous.min.js"></script>
-    <script>
-        var cap_fn = function(trigger) { return trigger.querySelector('div.txt').innerText; };
-        var opt = { openTrigger: 'click', closeTrigger: 'click', caption: cap_fn };
-        for (var a of document.querySelectorAll('a.zimg')) {
-            new Luminous(a, opt);
-        }
-    </script>
-</body>
-</html>'''
-
-        body = ''
+        all_data = []
         for m in media_sort:
             str_date = datetime.utcfromtimestamp(m.taken_at_timestamp).strftime('%b %d, %y')
 
@@ -444,34 +387,16 @@ class InstaGet:
             # todo add more data
             #      handle video
 
-            media_html = '''
-    <div class="cont">
-        <div class="img">
-            <a class="zimg" href="{big_url}">
-                <img src="{small_url}" />
-                <div class="txt hidden">{caption}</div>
-            </a>
-            <span class="likes">{likes:,}</span>
-            <div class="datedown hidden">
-                <span class="dates">{date}</span>
-                <a target="_blank" href="{big_url}">
-                    <span data-icon="&#127758;" class="ico" />
-                </a>
-                <span data-icon="&#128190;" class="ico" onclick="downloadResource('{save_url}')"/>
-            </div>
-        </div>
-    </div>'''.format(
-                big_url = m.display_url,
-                save_url = m.display_url,
-                small_url = thumb_url,
-                caption = caption,
-                likes = m.likes,
-                date = str_date,
-            )
+            all_data.append({
+                'big_url': m.display_url,
+                'save_url': m.display_url,
+                'small_url': thumb_url,
+                'caption': caption,
+                'likes': m.likes,
+                'date': str_date,
+            })
 
-            body += media_html
-
-        return header + body + footer
+        return template.render(all_data=all_data)
 
 
 def main():
