@@ -4,17 +4,17 @@ import hashlib
 import json
 import os
 import pickle
+import re
 import sys
 import time
 from datetime import datetime
+from glob import glob
+from mimetypes import guess_extension
 from pprint import pformat
 from typing import Dict, List, Union
-from mimetypes import guess_extension
-from glob import glob
-import re
-from jinja2 import Environment, FileSystemLoader
 
 import requests
+from jinja2 import Environment, FileSystemLoader
 from utils.logs import log_init
 
 lo = log_init('DEBUG')
