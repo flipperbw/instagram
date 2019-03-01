@@ -11,6 +11,7 @@ from pprint import pformat
 from typing import Dict, List, Union
 from mimetypes import guess_extension
 from glob import glob
+import re
 
 import requests
 from utils.logs import log_init
@@ -40,9 +41,12 @@ USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, li
 
 COOKIE_NAME = 'cookies'
 
+SAVE_THUMBS = True
 HTML_DIR = 'html/'
-IMGS_DIR = HTML_DIR + 'imgs/'
-THUMB_DIR = IMGS_DIR + 'thumbs/'
+IMGS_DIRNAME = 'imgs/'
+THUMB_DIRNAME = 'thumbs/'
+IMGS_DIR = HTML_DIR + IMGS_DIRNAME
+THUMB_DIR = IMGS_DIR + THUMB_DIRNAME
 
 
 class PartialContentException(Exception):
@@ -68,7 +72,7 @@ class Media:
         self.location: Dict[str, Union[str, bool]] = info['location']  # id: int, has_public_page: bool, name: str, slug: str
 
         #self.mimetype: str = None
-        self.filename: str = None
+        self.thumb_file: str = None
         #self.content = None  # todo do i need this? and make these all thumb_
 
     def __str__(self):
@@ -153,14 +157,15 @@ class InstaGet:
         matches = glob(THUMB_DIR + shortcode + '.*')
         matches_num = len(matches)
 
-        if matches_num == 1:  # more checks here on size, or set saved on media
-            lo.d(f'{matches[0]} already saved, skipping.')
+        if matches:
+            media.thumb_file = matches[0]
 
-        elif matches_num > 1:
-            lo.w(f'Found multiple files for {shortcode}: {", ".join(matches)}. Using {matches[0]}.')
+            if matches_num == 1:  # more checks here on size, or set saved on media
+                lo.d(f'{media.thumb_file} already saved, skipping.')
+            else:
+                lo.w(f'Found multiple files for {shortcode}: {", ".join(matches)}. Using {media.thumb_file}.')
 
         else:
-
             lo.d(f'Retrieving thumbnail for {shortcode}...')
 
             img_data = self.safe_get(media.thumbnail_src)
@@ -172,16 +177,13 @@ class InstaGet:
                 ext = '.jpg'
 
             #media.mimetype = ext
-            media.filename = shortcode + ext
+            media.thumb_file = THUMB_DIR + shortcode + ext
             #media.content = img_data.content
 
-            if not filepath:
-                filepath = THUMB_DIR + media.filename
+            with open(media.thumb_file, 'wb') as f:
+                f.write(img_data.content)
 
-            with open(filepath, 'wb') as f:
-                f.write(media.content)
-
-            lo.d(f'Saved {media.filename}')
+            lo.d(f'Saved {media.thumb_file}')
 
     def get_txt(self, url: str, is_json: bool = False):
         resp = self.safe_get(url)
@@ -362,6 +364,8 @@ class InstaGet:
 
         lo.i('Creating html...')
 
+        re_html = re.compile(r'^{}'.format(HTML_DIR))
+
         header = '''<html><head>
 <style>
     div.cont { display: inline-flex; width: 24%; position: relative; justify-content: center; margin-bottom: 15px; padding: 0 5px; }
@@ -375,13 +379,42 @@ class InstaGet:
     .lum-lightbox-caption { margin: 8px 150px; }
     div.datedown { position: absolute; bottom: 0px; right: 0; }
     div.datedown span { display: inline-block; }
-    div.datedown span.ico { font-size: 27px; line-height: 23px; padding: 10px 12px; text-shadow: #000 0px 0px 4px; }
+    div.datedown span.ico { font-size: 27px; line-height: 23px; padding: 10px 12px; text-shadow: #000 0px 0px 4px; cursor: pointer; }
     span.dates { font-size: 18px; padding-top: 11px; padding-bottom: 11px; }
     [data-icon]:before { font-family: Segoe UI Symbol; vertical-align: text-bottom; content: attr(data-icon); }
     .lum-lightbox-inner { background-color: rgba(0,0,0,0.6); }
     .lum-lightbox-inner img { height: calc(100% - 3em + 32px); }
     .lum-lightbox-caption { text-shadow: -1px -1px 3px #000, 1px -1px 3px #000, -1px 1px 3px #000, 1px 1px 3px #000; }
 </style>
+
+<script>
+    function forceDownload(blob, filename) {
+        var a = document.createElement('a');
+        a.download = filename;
+        a.href = blob;
+        // For Firefox https://stackoverflow.com/a/32226068
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    }
+    
+    // Current blob size limit is around 500MB for browsers
+    function downloadResource(url, filename) {
+        if (!filename) filename = url.split('\\\\').pop().split('/').pop().split('?')[0];
+        fetch(url, {
+            headers: new Headers({
+                'Origin': location.origin
+            }),
+            mode: 'cors'
+        })
+        .then(response => response.blob())
+        .then(blob => {
+            let blobUrl = window.URL.createObjectURL(blob);
+            forceDownload(blobUrl, filename);
+        })
+        .catch(e => console.error(e));
+    }
+</script>
 </head>
 <body>'''
 
@@ -399,9 +432,14 @@ class InstaGet:
 
         body = ''
         for m in media_sort:
-            m_date = m.taken_at_timestamp
-            str_date = datetime.utcfromtimestamp(m_date).strftime('%b %d, %y')
-            thumb_url = THUMB_DIR + m.filename
+            str_date = datetime.utcfromtimestamp(m.taken_at_timestamp).strftime('%b %d, %y')
+
+            if m.thumb_file:
+                thumb_url = re_html.sub('', m.thumb_file)
+            else:
+                thumb_url = m.thumbnail_src
+
+            caption = '<br /'.join(m.captions)
 
             # todo add more data
             #      handle video
@@ -413,20 +451,22 @@ class InstaGet:
                 <img src="{small_url}" />
                 <div class="txt hidden">{caption}</div>
             </a>
-            <span class="likes">{likes}</span>
+            <span class="likes">{likes:,}</span>
             <div class="datedown hidden">
                 <span class="dates">{date}</span>
                 <a target="_blank" href="{big_url}">
                     <span data-icon="&#127758;" class="ico" />
                 </a>
+                <span data-icon="&#128190;" class="ico" onclick="downloadResource('{save_url}')"/>
             </div>
         </div>
     </div>'''.format(
                 big_url = m.display_url,
+                save_url = m.display_url,
                 small_url = thumb_url,
-                caption = '<br /'.join(m.captions),
+                caption = caption,
                 likes = m.likes,
-                date = str_date
+                date = str_date,
             )
 
             body += media_html
@@ -449,9 +489,10 @@ def main():
         if MAX_IMGS is not None:
             media_sort = media_sort[:MAX_IMGS]
 
-        lo.i(f'Saving images ({len(media_sort)})...')
-        for m in media_sort:
-            scraper.save_media(m)
+        if SAVE_THUMBS:
+            lo.i(f'Saving images ({len(media_sort)})...')
+            for m in media_sort:
+                scraper.save_media(m)
 
         html = scraper.gen_html(prof, media_sort)
 
