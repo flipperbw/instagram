@@ -24,8 +24,8 @@ lo = log_init('INFO')
 
 # - Vars
 
-MAX_PAGES = 2
-MAX_IMGS = 200
+MAX_PAGES = 50
+MAX_IMGS = 250
 
 #RELOAD = False
 
@@ -34,6 +34,7 @@ PAGE_ITEMS = 16
 # -
 
 SLEEP_DELAY = 1
+SLEEP_DELAY_IMG = 0.25
 CONNECT_TIMEOUT = 3
 MAX_RETRIES = 5
 RETRY_DELAY = 2
@@ -48,15 +49,19 @@ USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, li
 
 COOKIE_NAME = 'cookies'
 
+FETCH_DATA = True
 SAVE_THUMBS = True
+
 HTML_DIRNAME = 'html/'
 IMGS_DIRNAME = 'imgs/'
 THUMB_DIRNAME = 'thumbs/'
 TEMPLATE_DIRNAME = 'templates/'
+PICKLE_DIRNAME = 'pkls/'
 HTML_DIR = HTML_DIRNAME
 IMGS_DIR = HTML_DIR + IMGS_DIRNAME
 THUMB_DIR = IMGS_DIR + THUMB_DIRNAME
 TEMPLATE_DIR = HTML_DIR + TEMPLATE_DIRNAME
+PICKLE_DIR = PICKLE_DIRNAME
 
 
 class PartialContentException(Exception):
@@ -108,6 +113,8 @@ class InstaGet:
         self.is_authed = False
 
         self.last_request = None
+
+        self.user = None
 
     def _sleep(self, secs: float = None):
         if secs is None:
@@ -178,7 +185,7 @@ class InstaGet:
         else:
             lo.d(f'Retrieving thumbnail for {shortcode}...')
 
-            img_data = self.safe_get(media.thumbnail_src, secs=0.5)
+            img_data = self.safe_get(media.thumbnail_src, secs=SLEEP_DELAY_IMG)
 
             ext = guess_extension(img_data.headers.get('content-type', '').partition(';')[0].strip())
             if not ext:
@@ -215,6 +222,24 @@ class InstaGet:
         else:
             lo.e('Could not auth.')
 
+    def to_pickle(self, data: dict, filename: str):
+        username = self.user or '_nouser'
+        dirname = PICKLE_DIR + username
+        if not os.path.exists(dirname):
+            os.mkdir(dirname)
+
+        with open(f'{dirname}/{filename}.pkl', 'wb') as f:
+            pickle.dump(data, f)
+
+    def load_pickle(self, filename: str):
+        username = self.user or '_nouser'
+        filepath = f'{PICKLE_DIR}{username}/{filename}.pkl'
+        if not os.path.exists(filepath):
+            return
+
+        with open(filepath, 'rb') as f:
+            return pickle.load(f)
+
     def get_shared_data(self, data: str):
         if '_sharedData' in data:
             try:
@@ -234,8 +259,7 @@ class InstaGet:
         except (AttributeError, TypeError, KeyError, IndexError) as e:
             lo.e(f'Exception {e} getting profile data')
 
-    @staticmethod
-    def get_media(data: dict):
+    def get_media(self, data: dict):
         media = data['edge_owner_to_timeline_media']
         if not media:
             return
@@ -254,6 +278,11 @@ class InstaGet:
 
         for edge in edges:
             node = edge.get('node')
+
+            fn = node.get('shortcode', '_none')
+            if fn != '_none':
+                fn = 'm_' + fn
+            self.to_pickle(node, fn)
 
             info = {
                 k: node.get(k) for k in
@@ -301,8 +330,7 @@ class InstaGet:
 
         return self.get_media(data)
 
-
-    def scrape(self, username):
+    def scrape(self, username: str = None):
         lo.i('Authing...')
 
         self.auth()
@@ -310,6 +338,14 @@ class InstaGet:
             return
 
         lo.i('Parsing profile...')
+
+        if not username:
+            username = self.user
+            if not username:
+                lo.e('No user set.')
+                return
+        else:
+            self.user = username
 
         url = BASE_URL + username
         resp = self.get_txt(url)
@@ -321,6 +357,8 @@ class InstaGet:
         page_data = self.get_page_data(shared_data)
         if not isinstance(page_data, dict):
             return
+
+        self.to_pickle(page_data, 'profile')
 
         profile_data = {
             k: page_data.get(k) for k in
@@ -360,7 +398,6 @@ class InstaGet:
                 break
 
             lo.i(f'Parsing page {pnum} of {max_pages}...')
-
 
             gql_data = self.get_gql(profile_id, end_cursor)
 
@@ -429,9 +466,15 @@ def main():
     scraper = InstaGet(cookiejar=COOKIE_NAME)
 
     user = sys.argv[1]
+    scraper.user = user
 
-    data = scraper.scrape(user)
-    scraper.save_cookies()
+    if FETCH_DATA:
+        data = scraper.scrape()
+        scraper.save_cookies()
+    else:
+        prof = scraper.load_pickle('profile')
+        media = [scraper.load_pickle(fn) for fn in glob(f'{PICKLE_DIR}m_*.pkl')]
+        data = (prof, media)
 
     if data is not None:
         prof, media = data
