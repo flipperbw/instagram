@@ -29,6 +29,8 @@ MAX_IMGS = None
 
 #RELOAD = False
 
+PAGE_ITEMS = 16
+
 # -
 
 SLEEP_DELAY = 1
@@ -341,7 +343,7 @@ class InstaGet:
 
         pnum = 2
 
-        while pnum <= MAX_PAGES:  # do max items instead? or always 50
+        while pnum <= MAX_PAGES:  # do max items instead? or always 50, but 12 on first page
             if not has_next:
                 lo.w('No more entries.')
                 return
@@ -382,21 +384,28 @@ class InstaGet:
             else:
                 thumb_url = m.thumbnail_src
 
-            caption = '<br /'.join(m.captions)
+            if m.is_video:
+                display_url = m.video_url
+            else:
+                display_url = m.display_url
+
+            caption = '<br />'.join(cap.strip() for cap in m.captions)
 
             # todo add more data
             #      handle video
 
             all_data.append({
-                'big_url': m.display_url,
-                'save_url': m.display_url,
+                'big_url': display_url,
+                'save_url': display_url,
                 'small_url': thumb_url,
                 'caption': caption,
                 'likes': m.likes,
                 'date': str_date,
+                'is_video': m.is_video,
+                'video_views': m.video_view_count
             })
 
-        return template.render(all_data=all_data)
+        return template.render(all_data=all_data, max_items=PAGE_ITEMS)
 
 
 def main():

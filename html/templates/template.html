@@ -5,7 +5,7 @@
     <title>Instagram Images</title>
 
     <link rel="stylesheet" href="templates/normalize.css" />
-    <link rel="stylesheet" href="templates/luminous-basic.min.css" />
+    <link rel="stylesheet" href="templates/luminous-basic.css" />
 
     <link rel="stylesheet" href="templates/main.css" />
 
@@ -13,22 +13,27 @@
 </head>
 <body onload="swap(window.location.hash)">
     <div id="all-imgs">
-    {% set items = 16 %}
-    {% for n in range(0, all_data | length, items) %}
-        <div id="section-{{ (n // items) + 1 }}" class="section" style="display: none;">
-        {% for data in all_data[n: n + items] %}
+    {% for n in range(0, all_data | length, max_items) %}
+        <div id="section-{{ (n // max_items) + 1 }}" class="section" style="display: none;">
+        {% for data in all_data[n: n + max_items] %}
             <div id="img-{{ loop.index + n }}" class="img">
-                <a class="zimg" href="{{ data.big_url }}">
+                <a class="zimg" href="{{ data.big_url }}" data-isvid="{{ data.is_video }}">
                     <img src="{{ data.small_url }}" />
                     <div class="txt hidden">{{ data.caption }}</div>
                 </a>
-                <span class="likes">{{ "{:,}".format(data.likes) }}</span>
+                <div class="left">
+                    <span class="likes">{{ "{:,}".format(data.likes) }}</span>
+                    {% if data.is_video %}
+                    <span data-icon="&#128253;" class="ico"></span>
+                    <span class="small hidden">{{ "{:,}".format(data.video_views) }}</span>
+                    {% endif %}
+                </div>
                 <div class="datedown hidden">
                     <span class="dates">{{ data.date }}</span>
                     <a target="_blank" href="{{ data.big_url }}">
-                        <span data-icon="&#127758;" class="ico external" />
+                        <span data-icon="&#127758;" class="ico external"></span>
                     </a>
-                    <span data-icon="&#128190;" class="ico download" onclick="downloadResource('{{ data.save_url }}')"/>
+                    <span data-icon="&#128190;" class="ico download" onclick="downloadResource('{{ data.save_url }}')"></span>
                 </div>
             </div>
         {% endfor %}
@@ -43,7 +48,7 @@
                     <a onclick="swap('prev')">&lt;</a>
                 </li>
 
-                {% for n in range(((all_data | length) // items) + 1) %}
+                {% for n in range(((all_data | length) // max_items) + 1) %}
                 {% set idx = n + 1 %}
                 <li id="goto-section-{{ idx }}">
                     <a href="#section-{{ idx }}" onclick="swap({{ idx }})">{{ idx }}</a>
@@ -57,10 +62,11 @@
         </div>
     </div>
 
-    <script type="text/javascript" src="templates/Luminous.min.js"></script>
+    <script type="text/javascript" src="templates/Luminous.js"></script>
     <script>
         var cap_fn = function(trigger) { return trigger.querySelector('div.txt').innerText; };
-        var opt = { caption: cap_fn };
+
+        var opt = { caption: cap_fn, onOpen: make_vid };
         for (var a of document.querySelectorAll('a.zimg')) {
             new Luminous(a, opt);
         }

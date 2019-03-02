@@ -25,6 +25,26 @@ function downloadResource(url, filename) {
     .catch(e => console.error(e));
 }
 
+
+var make_vid = function() {
+    var w = document.querySelector('.lum-opening img.lum-img');
+    if (!w) return;
+
+    var orig_el = document.querySelector(`a.zimg[href="${w.src}"`);
+    if (!orig_el || !orig_el.dataset || !orig_el.dataset.isvid || orig_el.dataset.isvid === "False") return;
+
+    var d = document.createElement('video');
+
+    d.autoplay = true;
+    d.controls = true;
+    d.loop = true;
+    d.muted = true;
+
+    d.src = w.src;
+    d.oncanplay = w.onload;
+    w.parentNode.replaceChild(d, w);
+};
+
 function swap(idx) {
     var sections = document.getElementsByClassName('section');
 
