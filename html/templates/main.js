@@ -103,7 +103,21 @@ function swap(idx) {
     for (let el of sections) {
         el.style.display = 'none';
     }
+
     target.style.display = null;
+
+    for (let idata of target.querySelectorAll('img[data-src]')) {
+        idata.onload = function() {
+            var parent = this.closest('div.img');
+            parent.classList.remove('lum-loading');
+            var sibling = this.previousElementSibling;
+            if (sibling.classList.contains('lum-lightbox-loader')) {
+                sibling.remove();
+            }
+        };
+        idata.src = idata.dataset.src;
+        delete idata.dataset.src;
+    }
 
     var li_prev = document.getElementById('goto-prev');
     var li_next = document.getElementById('goto-next');

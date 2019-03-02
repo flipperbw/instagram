@@ -1,6 +1,7 @@
 div[id^="section-"] {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    grid-auto-rows: minmax(200px, auto);
     grid-gap: 14px;
     margin: 10px 14px;
 }
@@ -14,9 +15,12 @@ div.img:hover .hidden {
     transition-delay: 0.3s;
 }
 
-.hidden {
+div.img .hidden {
     transition: opacity 200ms ease-out;
     transition-delay: 0s;
+}
+
+.hidden {
     opacity: 0;
     filter: blur(0);
 }
@@ -116,6 +120,9 @@ div.datedown span.ico {
     content: attr(data-icon);
 }
 
+.zimg .lum-lightbox-loader:after, .zimg .lum-lightbox-loader:before {
+    background: #6a717b;
+}
 
 .lum-lightbox {
     background: rgba(0, 0, 0, 0.75);
@@ -139,6 +146,7 @@ div.datedown span.ico {
     max-width: unset;
     font-size: 18px;
     text-shadow: -1px -1px 3px #000, 1px -1px 3px #000, -1px 1px 3px #000, 1px 1px 3px #000;
+    line-height: 1.25;
 }
 
 .lum-lightbox.lum-closing, .lum-lightbox.lum-opening {

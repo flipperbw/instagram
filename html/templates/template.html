@@ -16,9 +16,10 @@
     {% for n in range(0, all_data | length, max_items) %}
         <div id="section-{{ (n // max_items) + 1 }}" class="section" style="display: none;">
         {% for data in all_data[n: n + max_items] %}
-            <div id="img-{{ loop.index + n }}" class="img">
+            <div id="img-{{ loop.index + n }}" class="img lum-loading">
                 <a class="zimg" href="{{ data.big_url }}" data-isvid="{{ data.is_video }}">
-                    <img src="{{ data.small_url }}" />
+                    <div class="lum-lightbox-loader"></div>
+                    <img data-src="{{ data.small_url }}" src="" />
                     <div class="txt hidden">{{ data.caption }}</div>
                 </a>
                 <div class="left">
