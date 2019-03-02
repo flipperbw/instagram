@@ -1,4 +1,4 @@
-#all-imgs {
+div[id^="section-"] {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
     grid-gap: 14px;
@@ -95,6 +95,7 @@ div.datedown span.download {
     content: attr(data-icon);
 }
 
+
 .lum-lightbox {
     background: rgba(0, 0, 0, 0.75);
 }
@@ -120,3 +121,66 @@ div.datedown span.download {
 .lum-lightbox.lum-closing, .lum-lightbox.lum-opening {
     animation: lum-noop 1ms
 }
+
+#pagination {
+    padding: 0 20px;
+    margin: 20px auto;
+    text-align: center;
+}
+
+#pagination-compact {
+    display: inline-block;
+    vertical-align: middle;
+    overflow: hidden;
+}
+
+.clearfix:after {
+    visibility: hidden;
+    display: block;
+    font-size: 0;
+    content: " ";
+    clear: both;
+    height: 0;
+}
+
+ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+ul li {
+    float: left;
+}
+
+ul li.active a, ul li.disabled a {
+    pointer-events: none;
+    cursor: default;
+}
+
+ul li.active a {
+    background: -webkit-linear-gradient(top, #d9e0ec 0%, #b9bfca 100%);
+}
+
+ul li.disabled a {
+    background: rgb(234, 234, 234);
+    color: #afafaf;
+}
+
+ul li a {
+    outline: none;
+    color: #333;
+    text-align: center;
+    border: 1px solid #AAA;
+    border-left: none;
+    min-width: 14px;
+    padding: 12px 16px;
+    background: -webkit-linear-gradient(top, #ffffff 0%, #efefef 100%);
+    cursor: pointer;
+}
+
+li:first-child {
+    border-left: 1px solid #AAA;
+}
+
+

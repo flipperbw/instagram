@@ -17,7 +17,7 @@ import requests
 from jinja2 import Environment, FileSystemLoader
 from utils.logs import log_init
 
-lo = log_init('DEBUG')
+lo = log_init('INFO')
 
 # todo: save data as pickle and load
 # todo: lazyload images
@@ -25,7 +25,9 @@ lo = log_init('DEBUG')
 # - Vars
 
 MAX_PAGES = 2
-MAX_IMGS = 5
+MAX_IMGS = None
+
+#RELOAD = False
 
 # -
 
@@ -324,7 +326,7 @@ class InstaGet:
 
         lo.v('\n' + pformat(profile_data, indent=4))
 
-        lo.i('Parsing page 1...')
+        lo.i(f'Parsing page 1 of {MAX_PAGES}...')
 
         first_page_data = self.get_media(page_data)
 
@@ -344,7 +346,7 @@ class InstaGet:
                 lo.w('No more entries.')
                 return
 
-            lo.i(f'Parsing page {pnum}...')
+            lo.i(f'Parsing page {pnum} of {MAX_PAGES}...')
 
             gql_data = self.get_gql(profile_id, end_cursor)
 
@@ -363,9 +365,7 @@ class InstaGet:
 
 
     @staticmethod
-    def gen_html(prof: dict, media_sort: List[Media]):
-        #todo move to jinja
-
+    def gen_html(_prof: dict, media_sort: List[Media]):
         lo.i('Creating html...')
 
         re_html = re.compile(r'^{}'.format(HTML_DIR))

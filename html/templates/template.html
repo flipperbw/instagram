@@ -11,24 +11,50 @@
 
     <script type="text/javascript" src="templates/main.js"></script>
 </head>
-<body>
+<body onload="swap(window.location.hash)">
     <div id="all-imgs">
-    {% for data in all_data %}
-        <div class="img">
-            <a class="zimg" href="{{ data.big_url }}">
-                <img src="{{ data.small_url }}" />
-                <div class="txt hidden">{{ data.caption }}</div>
-            </a>
-            <span class="likes">{{ "{:,}".format(data.likes) }}</span>
-            <div class="datedown hidden">
-                <span class="dates">{{ data.date }}</span>
-                <a target="_blank" href="{{ data.big_url }}">
-                    <span data-icon="&#127758;" class="ico external" />
+    {% set items = 16 %}
+    {% for n in range(0, all_data | length, items) %}
+        <div id="section-{{ (n // items) + 1 }}" class="section" style="display: none;">
+        {% for data in all_data[n: n + items] %}
+            <div id="img-{{ loop.index + n }}" class="img">
+                <a class="zimg" href="{{ data.big_url }}">
+                    <img src="{{ data.small_url }}" />
+                    <div class="txt hidden">{{ data.caption }}</div>
                 </a>
-                <span data-icon="&#128190;" class="ico download" onclick="downloadResource('{{ data.save_url }}')"/>
+                <span class="likes">{{ "{:,}".format(data.likes) }}</span>
+                <div class="datedown hidden">
+                    <span class="dates">{{ data.date }}</span>
+                    <a target="_blank" href="{{ data.big_url }}">
+                        <span data-icon="&#127758;" class="ico external" />
+                    </a>
+                    <span data-icon="&#128190;" class="ico download" onclick="downloadResource('{{ data.save_url }}')"/>
+                </div>
             </div>
+        {% endfor %}
         </div>
     {% endfor %}
+    </div>
+
+    <div id="pagination" class="clearfix">
+        <div id="pagination-compact">
+            <ul>
+                <li id="goto-prev">
+                    <a onclick="swap('prev')">&lt;</a>
+                </li>
+
+                {% for n in range(((all_data | length) // items) + 1) %}
+                {% set idx = n + 1 %}
+                <li id="goto-section-{{ idx }}">
+                    <a href="#section-{{ idx }}" onclick="swap({{ idx }})">{{ idx }}</a>
+                </li>
+                {% endfor %}
+
+                <li id="goto-next">
+                    <a onclick="swap('next')">&gt;</a>
+                </li>
+            </ul>
+        </div>
     </div>
 
     <script type="text/javascript" src="templates/Luminous.min.js"></script>
