@@ -1,48 +1,27 @@
-function forceDownload(blob, filename) {
-    var a = document.createElement('a');
-    a.download = filename;
-    a.href = blob;
-    // For Firefox https://stackoverflow.com/a/32226068
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+function whichTransitionEvent() {
+    var el = document.createElement("fakeelement");
+
+    var transitions = {
+        "transition"      : "transitionend",
+        "OTransition"     : "oTransitionEnd",
+        "MozTransition"   : "transitionend",
+        "WebkitTransition": "webkitTransitionEnd"
+    };
+
+    for (let t in transitions) {
+        if (el.style[t] !== undefined) {
+            return transitions[t];
+        }
+    }
 }
 
-// Current blob size limit is around 500MB for browsers
-function downloadResource(url, filename) {
-    if (!filename) filename = url.split('\\\\').pop().split('/').pop().split('?')[0];
-    fetch(url, {
-        headers: new Headers({
-            'Origin': location.origin
-        }),
-        mode: 'cors'
-    })
-    .then(response => response.blob())
-    .then(blob => {
-        let blobUrl = window.URL.createObjectURL(blob);
-        forceDownload(blobUrl, filename);
-    })
-    .catch(e => console.error(e));
-}
+var transitionEvent = whichTransitionEvent();
 
-
-var make_vid = function() {
-    var w = document.querySelector('.lum-opening img.lum-img');
-    if (!w) return;
-
-    var orig_el = document.querySelector(`a.zimg[href="${w.src}"`);
-    if (!orig_el || !orig_el.dataset || !orig_el.dataset.isvid || orig_el.dataset.isvid === "False") return;
-
-    var d = document.createElement('video');
-
-    d.autoplay = true;
-    d.controls = true;
-    d.loop = true;
-    d.muted = true;
-
-    d.src = w.src;
-    d.oncanplay = w.onload;
-    w.parentNode.replaceChild(d, w);
+var transitionEndCallback = function(el) {
+    console.log(el);
+    el.removeEventListener(transitionEvent, transitionEndCallback);
+    el.classList.remove('hidden');
+    el.style.opacity = null;
 };
 
 function swap(idx) {
@@ -80,7 +59,11 @@ function swap(idx) {
                     dest_id = curr + 1;
                 }
             }
-            if (dest_id) window.location.hash = `#section-${dest_id}`;
+
+            if (dest_id) {
+                window.location.hash = `#section-${dest_id}`;
+            }
+
             window.scrollTo(0, 0);
         }
 
@@ -90,7 +73,7 @@ function swap(idx) {
         dest_id = idx;
     }
 
-    if (!dest_id) {}
+    //if (!dest_id) {}
 
     var el_id = `section-${dest_id}`;
 
@@ -106,8 +89,25 @@ function swap(idx) {
 
     target.style.display = null;
 
-    for (let idata of target.querySelectorAll('img[data-src]')) {
+    var target_datasrc = target.querySelectorAll('img[data-src]');
+
+    var next_datasrc = document.createDocumentFragment().childNodes;
+    var target_next = document.getElementById(`section-${dest_id + 1}`);
+    if (target_next) {
+        next_datasrc = target_next.querySelectorAll('img[data-src]');
+    }
+
+    var combo_datasrc = [
+        ...target_datasrc,
+        ...next_datasrc
+    ];
+
+    for (let idata of combo_datasrc) {
+        idata.addEventListener(transitionEvent, transitionEndCallback);
+
         idata.onload = function() {
+            this.style.opacity = 1;
+
             var parent = this.closest('div.img');
             parent.classList.remove('lum-loading');
             var sibling = this.previousElementSibling;
@@ -115,6 +115,7 @@ function swap(idx) {
                 sibling.remove();
             }
         };
+
         idata.src = idata.dataset.src;
         delete idata.dataset.src;
     }
@@ -147,4 +148,84 @@ function swap(idx) {
     if (li) {
         li.classList.add("active");
     }
+}
+
+swap(window.location.hash);
+
+for (let lia of document.querySelectorAll('#pagination-compact li a')) {
+    lia.onclick = () => { swap(lia.dataset.section_id); };
+}
+
+function forceDownload(blob, filename) {
+    var a = document.createElement('a');
+    a.download = filename;
+    a.href = blob;
+    // For Firefox https://stackoverflow.com/a/32226068
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+}
+
+// Current blob size limit is around 500MB for browsers
+
+function downloadResource(url, filename) {
+    let fname = filename;
+    if (!fname) {
+        fname = url.split('\\\\').pop().split('/').pop().split('?')[0];
+    }
+
+    fetch(url, {
+        headers: new Headers({
+            'Origin': location.origin
+        }),
+        mode: 'cors'
+    })
+    .then(response => response.blob())
+    .then(blob => {
+        let blobUrl = window.URL.createObjectURL(blob);
+        forceDownload(blobUrl, fname);
+    })
+    .catch(e => console.error(e));
+}
+
+var runDownload = function() {
+    let url = this.dataset.dl_url;
+    if (!url) return;
+    downloadResource(url);
+};
+
+for (let sp of document.querySelectorAll('span.download')) {
+    console.log(sp);
+    sp.onclick = runDownload;
+}
+
+var make_vid = function() {
+    var w = document.querySelector('.lum-opening img.lum-img');
+    if (!w) return;
+
+    var orig_el = document.querySelector(`a.zimg[href="${w.src}"`);
+    if (!orig_el || !orig_el.dataset || !orig_el.dataset.isvid || orig_el.dataset.isvid === "False") return;
+
+    var d = document.createElement('video');
+
+    d.autoplay = true;
+    d.controls = true;
+    d.loop = true;
+    d.muted = true;
+
+    d.src = w.src;
+    d.oncanplay = w.onload;
+    w.parentNode.replaceChild(d, w);
+};
+
+var cap_fn = function(trigger) {
+    return trigger.querySelector('div.txt').innerText;
+};
+
+var opt = { caption: cap_fn, onOpen: make_vid };
+
+import { Luminous } from 'luminous-lightbox';
+
+for (var a of document.querySelectorAll('a.zimg')) {
+    Luminous(a, opt);
 }

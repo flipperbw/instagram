@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
 
+import argparse
 import hashlib
 import json
 import os
 import pickle
 import re
-import sys
 import time
 from datetime import datetime
 from glob import glob
 from mimetypes import guess_extension
 from pprint import pformat
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 
 import requests
 from jinja2 import Environment, FileSystemLoader
 from utils.logs import log_init
 
-lo = log_init('INFO')
+DEFAULT_LOGLEVEL = 'INFO'
+lo = log_init(DEFAULT_LOGLEVEL)
 
 # todo: save data as pickle and load
 # todo: lazyload images
@@ -48,9 +49,6 @@ GQL_VARS = '{{"id":"{0}","first":50,"after":"{1}"}}'
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.87 Safari/537.36'
 
 COOKIE_NAME = 'cookies'
-
-FETCH_DATA = True
-SAVE_THUMBS = True
 
 HTML_DIRNAME = 'html/'
 IMGS_DIRNAME = 'imgs/'
@@ -231,10 +229,13 @@ class InstaGet:
         with open(f'{dirname}/{filename}.pkl', 'wb') as f:
             pickle.dump(data, f)
 
-    def load_pickle(self, filename: str):
-        username = self.user or '_nouser'
-        filepath = f'{PICKLE_DIR}{username}/{filename}.pkl'
+    def load_pickle(self, filepath: str):
+        if '/' not in filepath:
+            username = self.user or '_nouser'
+            filepath = f'{PICKLE_DIR}{username}/{filepath.replace(".pkl","")}.pkl'
+
         if not os.path.exists(filepath):
+            lo.e(f'Could not find pickle for {filepath}')
             return
 
         with open(filepath, 'rb') as f:
@@ -259,6 +260,29 @@ class InstaGet:
         except (AttributeError, TypeError, KeyError, IndexError) as e:
             lo.e(f'Exception {e} getting profile data')
 
+    @staticmethod
+    def convert_node(node: dict):
+        info = {
+            k: node.get(k) for k in
+            ('id', 'shortcode', 'display_url', 'thumbnail_src', 'is_video', 'video_url', 'video_view_count',
+             'accessibility_caption', 'comments_disabled', 'dimensions', 'location', 'taken_at_timestamp')
+        }
+
+        info['likes'] = node.get('edge_media_preview_like', {}).get('count')
+        info['comments'] = node.get('edge_media_to_comment', {}).get('count')
+
+        # todo: is this ever more than 1?
+        #       combine to comprehension
+        captions = []
+        for caption in node.get('edge_media_to_caption', {}).get('edges', []):
+            cap_txt = caption.get('node', {}).get('text')
+            if cap_txt is not None:
+                captions.append(cap_txt)
+
+        info['captions'] = captions
+
+        return Media(**info)
+
     def get_media(self, data: dict):
         media = data['edge_owner_to_timeline_media']
         if not media:
@@ -274,34 +298,20 @@ class InstaGet:
         has_next_page = page_info['has_next_page']
         end_cursor = page_info['end_cursor']
 
-        media_list = []
+        media_list: List[Media] = []
 
         for edge in edges:
-            node = edge.get('node')
+            node = edge.get('node', {})
 
             fn = node.get('shortcode', '_none')
             if fn != '_none':
                 fn = 'm_' + fn
+
             self.to_pickle(node, fn)
 
-            info = {
-                k: node.get(k) for k in
-                ('id', 'shortcode', 'display_url', 'thumbnail_src', 'is_video', 'video_url', 'video_view_count',
-                 'accessibility_caption', 'comments_disabled', 'dimensions', 'location', 'taken_at_timestamp')
-            }
+            info = self.convert_node(node)
 
-            info['likes'] = node.get('edge_media_preview_like', {}).get('count')
-            info['comments'] = node.get('edge_media_to_comment', {}).get('count')
-
-            # todo: is this ever more than 1?
-            #       combine to comprehension
-            info['captions'] = []
-            for caption in node.get('edge_media_to_caption', {}).get('edges', []):
-                cap_txt = caption.get('node', {}).get('text')
-                if cap_txt is not None:
-                    info['captions'].append(cap_txt)
-
-            media_list.append(Media(**info))
+            media_list.append(info)
 
         return {
             'count': count,
@@ -330,7 +340,7 @@ class InstaGet:
 
         return self.get_media(data)
 
-    def scrape(self, username: str = None):
+    def scrape(self, username: str = None, max_pages: int = MAX_PAGES):
         lo.i('Authing...')
 
         self.auth()
@@ -368,7 +378,7 @@ class InstaGet:
 
         lo.v('\n' + pformat(profile_data, indent=4))
 
-        lo.i(f'Parsing page 1 of {MAX_PAGES}...')
+        lo.i(f'Parsing page 1 of {max_pages}...')
 
         first_page_data = self.get_media(page_data)
 
@@ -379,11 +389,9 @@ class InstaGet:
         all_media = first_page_data['media_list']
 
         actual_pages = ((total_items - len(all_media)) // 50) + 2
-        if actual_pages < MAX_PAGES:
-            lo.w(f'Lowering total pages from {MAX_PAGES} to {actual_pages}')
+        if actual_pages < max_pages:
+            lo.w(f'Lowering total pages from {max_pages} to {actual_pages}')
             max_pages = actual_pages
-        else:
-            max_pages = MAX_PAGES
 
         profile_id = profile_data['id']
 
@@ -416,7 +424,7 @@ class InstaGet:
 
 
     @staticmethod
-    def gen_html(_prof: dict, media_sort: List[Media]):
+    def gen_html(_prof: dict, media_sort: List[Media], page_images: int = PAGE_ITEMS):
         lo.i('Creating html...')
 
         re_html = re.compile(r'^{}'.format(HTML_DIR))
@@ -459,22 +467,50 @@ class InstaGet:
                 'location': location
             })
 
-        return template.render(all_data=all_data, max_items=PAGE_ITEMS)
+        return template.render(all_data=all_data, max_items=page_images)
 
 
-def main():
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description='Fetch data from instagram and create custom HTML pages', formatter_class=argparse.RawTextHelpFormatter)
+
+    parser.add_argument('username', type=str,
+                        help='Instagram username')
+    parser.add_argument('-c', '--cache', action='store_true',
+                        help='Do not fetch data, only use cached data')
+    parser.add_argument('-n', '--no-save-imgs', action='store_true',
+                        help='Do not save thumbnails, use instagram URLs')
+    parser.add_argument('-m', '--max-pages', type=int, default=MAX_PAGES,
+                        help='Max pages to parse')
+    parser.add_argument('-i', '--max-images', type=int, default=MAX_IMGS,
+                        help='Max images to display in HTML')
+    parser.add_argument('-p', '--page-images', type=int, default=PAGE_ITEMS,
+                        help='Max images to display per page in HTML')
+    parser.add_argument('-l', '--log-level', type=str, default=DEFAULT_LOGLEVEL, choices=[l.lower() for l in lo.levels],
+                        help='Log level for output')
+
+    return parser.parse_args()
+
+def main(username: str, cache: bool, no_save_imgs: bool, max_pages: int, max_images: Optional[int], page_images: int, log_level: str, **_kw):
+    #todo allow int
+    log_level = log_level.upper()
+    if log_level != DEFAULT_LOGLEVEL:
+        lo.set_level(log_level)
+
     scraper = InstaGet(cookiejar=COOKIE_NAME)
+    scraper.user = username
 
-    user = sys.argv[1]
-    scraper.user = user
-
-    if FETCH_DATA:
-        data = scraper.scrape()
-        scraper.save_cookies()
-    else:
+    if cache:
         prof = scraper.load_pickle('profile')
-        media = [scraper.load_pickle(fn) for fn in glob(f'{PICKLE_DIR}m_*.pkl')]
+        media = [
+            scraper.convert_node(
+                scraper.load_pickle(fn)
+            )
+            for fn in glob(f'{PICKLE_DIR}{username}/m_*.pkl')
+        ]
         data = (prof, media)
+    else:
+        data = scraper.scrape(max_pages=max_pages)
+        scraper.save_cookies()
 
     if data is not None:
         prof, media = data
@@ -482,17 +518,17 @@ def main():
         lo.i(f'Found {len(media)} items.')
 
         media_sort = sorted(media, key=lambda x: x.likes, reverse=True)
-        if MAX_IMGS is not None:
-            media_sort = media_sort[:MAX_IMGS]
+        if max_images is not None:
+            media_sort = media_sort[:max_images]
 
-        if SAVE_THUMBS:
+        if not no_save_imgs:
             lo.i(f'Saving images ({len(media_sort)})...')
             for m in media_sort:
                 scraper.save_media(m)
 
-        html = scraper.gen_html(prof, media_sort)
+        html = scraper.gen_html(prof, media_sort, page_images)
 
-        filename = HTML_DIR + user + '.html'
+        filename = HTML_DIR + username + '.html'
         with open(filename, 'w') as f:
             f.writelines(html)
             lo.s(f'Wrote to {filename}')
@@ -500,4 +536,6 @@ def main():
     lo.s('Done')
 
 if __name__ == '__main__':
-    main()
+    args = parse_args()
+    dargs = vars(args)
+    main(**dargs)
