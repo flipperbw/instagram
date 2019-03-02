@@ -24,8 +24,8 @@ lo = log_init('INFO')
 
 # - Vars
 
-MAX_PAGES = 2
-MAX_IMGS = None
+MAX_PAGES = 15
+MAX_IMGS = 200
 
 #RELOAD = False
 
@@ -41,6 +41,8 @@ RETRY_DELAY = 2
 BASE_URL = 'https://www.instagram.com/'
 GQL_URL = BASE_URL + 'graphql/query/?query_hash=f2405b236d85e8296cf30347c9f08c2a&variables={}'
 GQL_VARS = '{{"id":"{0}","first":50,"after":"{1}"}}'
+
+#https://www.instagram.com/user/?__a=1 ? seems to be working again. rate limited?
 
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.87 Safari/537.36'
 
@@ -107,7 +109,7 @@ class InstaGet:
 
         self.last_request = None
 
-    def _sleep(self, secs: int = None):
+    def _sleep(self, secs: float = None):
         if secs is None:
             if not self.last_request:
                 secs = 0
@@ -122,12 +124,12 @@ class InstaGet:
     def _set_last(self):
         self.last_request = time.time()
 
-    def safe_get(self, url: str, stream: bool = False):
+    def safe_get(self, url: str, stream: bool = False, secs: float = None):
         tries = 0
         retry_delay = RETRY_DELAY
 
         while tries <= MAX_RETRIES:
-            self._sleep()
+            self._sleep(secs=secs)
 
             try:
                 response = self.session.get(
@@ -176,7 +178,7 @@ class InstaGet:
         else:
             lo.d(f'Retrieving thumbnail for {shortcode}...')
 
-            img_data = self.safe_get(media.thumbnail_src)
+            img_data = self.safe_get(media.thumbnail_src, secs=0.5)
 
             ext = guess_extension(img_data.headers.get('content-type', '').partition(';')[0].strip())
             if not ext:
@@ -332,9 +334,18 @@ class InstaGet:
 
         first_page_data = self.get_media(page_data)
 
-        #lo.v('\n' + pformat(first_page_data, indent=4))
+        total_items = first_page_data['count']
+
+        lo.i(f'{total_items:,} total items')
 
         all_media = first_page_data['media_list']
+
+        actual_pages = ((total_items - len(all_media)) // 50) + 2
+        if actual_pages < MAX_PAGES:
+            lo.w(f'Lowering total pages from {MAX_PAGES} to {actual_pages}')
+            max_pages = actual_pages
+        else:
+            max_pages = MAX_PAGES
 
         profile_id = profile_data['id']
 
@@ -343,18 +354,20 @@ class InstaGet:
 
         pnum = 2
 
-        while pnum <= MAX_PAGES:  # do max items instead? or always 50, but 12 on first page
+        while pnum <= max_pages:  # do max items instead? or always 50, but 12 on first page
             if not has_next:
                 lo.w('No more entries.')
-                return
+                break
 
-            lo.i(f'Parsing page {pnum} of {MAX_PAGES}...')
+            lo.i(f'Parsing page {pnum} of {max_pages}...')
+
 
             gql_data = self.get_gql(profile_id, end_cursor)
 
             #lo.v('\n' + pformat(gql_data, indent=4))
 
             all_media += gql_data['media_list']
+            print(len(gql_data['media_list']))
 
             has_next = gql_data['has_next_page']
             end_cursor = gql_data['end_cursor']
@@ -418,6 +431,8 @@ def main():
 
     if data is not None:
         prof, media = data
+
+        lo.i(f'Found {len(media)} items.')
 
         media_sort = sorted(media, key=lambda x: x.likes, reverse=True)
         if MAX_IMGS is not None:
