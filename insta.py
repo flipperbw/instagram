@@ -24,7 +24,7 @@ lo = log_init('INFO')
 
 # - Vars
 
-MAX_PAGES = 15
+MAX_PAGES = 2
 MAX_IMGS = 200
 
 #RELOAD = False
@@ -367,7 +367,6 @@ class InstaGet:
             #lo.v('\n' + pformat(gql_data, indent=4))
 
             all_media += gql_data['media_list']
-            print(len(gql_data['media_list']))
 
             has_next = gql_data['has_next_page']
             end_cursor = gql_data['end_cursor']
@@ -404,8 +403,12 @@ class InstaGet:
 
             caption = '<br />'.join(cap.strip() for cap in m.captions)
 
+            if isinstance(m.location, dict):
+                location = m.location.get('name')
+            else:
+                location = None
+
             # todo add more data
-            #      handle video
 
             all_data.append({
                 'big_url': display_url,
@@ -415,7 +418,8 @@ class InstaGet:
                 'likes': m.likes,
                 'date': str_date,
                 'is_video': m.is_video,
-                'video_views': m.video_view_count
+                'video_views': m.video_view_count,
+                'location': location
             })
 
         return template.render(all_data=all_data, max_items=PAGE_ITEMS)

@@ -20,7 +20,7 @@
                 <a class="zimg" href="{{ data.big_url }}" data-isvid="{{ data.is_video }}">
                     <div class="lum-lightbox-loader"></div>
                     <img data-src="{{ data.small_url }}" src="" />
-                    <div class="txt hidden">{{ data.caption }}</div>
+                    <div class="txt hidden">{{ data.caption }}{% if data.location %} &nbsp;&#8226;&nbsp; Location: {{ data.location }}{% endif %}</div>
                 </a>
                 <div class="left">
                     <span class="likes">{{ "{:,}".format(data.likes) }}</span>
