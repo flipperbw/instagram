@@ -9,13 +9,14 @@ import os
 import pickle
 import re
 import shutil
+import sys
 import textwrap
 import time
 from datetime import datetime
 from glob import glob
 from mimetypes import guess_extension
 from pprint import pformat
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Union
 
 import requests
 from jinja2 import Environment, FileSystemLoader
@@ -270,6 +271,15 @@ class InstaGet:
             lo.e(f'Exception {e} getting profile data')
 
     @staticmethod
+    def convert_profile(page_data: dict):
+        profile_data = {
+            k: page_data.get(k) for k in
+            ('biography', 'full_name', 'id', 'profile_pic_url_hd')
+        }
+        profile_data['followers'] = page_data.get('edge_followed_by', {}).get('count')
+        return profile_data
+
+    @staticmethod
     def convert_node(node: dict):
         info = {
             k: node.get(k) for k in
@@ -349,44 +359,16 @@ class InstaGet:
 
         return self.get_media(data)
 
-    def scrape(self, username: str = None, max_pages: int = MAX_PAGES):
-        lo.i('Authing...')
-
-        self.auth()
-        if not self.is_authed:
-            return
-
+    def fetch_profile(self):
         lo.i('Parsing profile...')
+        url = BASE_URL + self.user
 
-        if not username:
-            username = self.user
-            if not username:
-                lo.e('No user set.')
-                return
-        else:
-            self.user = username
-
-        url = BASE_URL + username
         resp = self.get_txt(url)
         if resp is None:
-            return
+            lo.e('Could not fetch profile')
+        return resp
 
-        shared_data = self.get_shared_data(resp)
-
-        page_data = self.get_page_data(shared_data)
-        if not isinstance(page_data, dict):
-            return
-
-        self.to_pickle(page_data, 'profile')
-
-        profile_data = {
-            k: page_data.get(k) for k in
-            ('biography', 'full_name', 'id', 'profile_pic_url_hd')
-        }
-        profile_data['followers'] = page_data.get('edge_followed_by', {}).get('count')
-
-        lo.v('\n' + pformat(profile_data, indent=4))
-
+    def fetch_media(self, profile_id: str, max_pages: int, page_data: dict):
         lo.i(f'Parsing page 1 of {max_pages}...')
 
         first_page_data = self.get_media(page_data)
@@ -401,8 +383,6 @@ class InstaGet:
         if actual_pages < max_pages:
             lo.w(f'Lowering total pages from {max_pages} to {actual_pages}')
             max_pages = actual_pages
-
-        profile_id = profile_data['id']
 
         has_next = first_page_data['has_next_page']
         end_cursor = first_page_data['end_cursor']
@@ -429,8 +409,69 @@ class InstaGet:
 
         lo.i('Done parsing')
 
-        return profile_data, all_media
+        return all_media
 
+    def scrape(
+        self, user: str = None, max_pages: int = MAX_PAGES, max_images: int = MAX_IMGS, overwrite: bool = False
+    ):
+        if not user:
+            user = self.user
+            if not user:
+                lo.e('No user set.')
+                return
+        else:
+            self.user = user
+
+        lo.i('Authing...')
+
+        self.auth()
+        if not self.is_authed:
+            return
+
+        if overwrite:
+            shared_data = None
+            page_data: dict = {}
+            all_media: List[Media] = []
+        else:
+            lo.i('Loading cached data...')
+            shared_data = None
+            page_data = self.load_pickle('profile')
+            all_media = [
+                self.convert_node(
+                    self.load_pickle(fn)
+                )
+                for fn in glob(f'{PICKLE_DIR}{user}/m_*.pkl')
+            ]
+
+        if not page_data:
+            resp = self.fetch_profile()
+            if resp is None:
+                return
+
+            shared_data = self.get_shared_data(resp)
+            page_data = self.get_page_data(shared_data)
+            if not isinstance(page_data, dict):
+                return
+
+            self.to_pickle(page_data, 'profile')
+
+        profile_data = self.convert_profile(page_data)
+        lo.v('\n' + pformat(profile_data, indent=4))
+
+        # technically wrong if max images too high, past last page
+        if not all_media or len(all_media) < max_images:
+            if not shared_data:
+                resp = self.fetch_profile()
+                if resp is None:
+                    return
+                shared_data = self.get_shared_data(resp)
+                if not shared_data:
+                    return
+
+            profile_id = profile_data['id']
+            all_media = self.fetch_media(profile_id, max_pages, page_data)
+
+        return profile_data, all_media
 
     @staticmethod
     def gen_html(_prof: dict, media_sort: List[Media], page_images: int = PAGE_ITEMS):
@@ -481,11 +522,34 @@ class InstaGet:
         )
 
 
+color_dict = {
+    'RED': '1;31m', 'GREEN': '1;32m',
+    'YELLOW': '1;33m', 'BLUE': '1;36m'
+}
+
 class CustomArgumentParser(argparse.ArgumentParser):
     def print_help(self, file=None):
         super().print_help(file)
         if self.epilog and set(self.epilog) == {'\n'}:
             self._print_message(self.epilog, file)
+
+    def exit(self, status=0, message=None):
+        if message:
+            self._print_message('\n' + message + '\n', sys.stderr, color_dict['RED'])
+        sys.exit(status)
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(2, f'Error: {message}')
+
+    def _print_message(self, message, file=None, color=None):
+        if color is None:
+            super()._print_message(message, file)
+        else:
+            if not message: return
+            if file is None: file = sys.stderr
+            # file.write('\x1b[' + color + 'm' + message.strip() + '\x1b[0m\n')
+            file.write('\x1b[' + color + message + '\x1b[0m')
 
 class CustomHelpFormatter(argparse.HelpFormatter):
     def __init__(self, prog):
@@ -495,7 +559,7 @@ class CustomHelpFormatter(argparse.HelpFormatter):
 
     def add_usage(self, usage, actions, groups, prefix=None):
         if prefix is None:
-            prefix = 'Usage:\n  '
+            prefix = '\x1b[' + color_dict['GREEN'] + 'Usage:' + '\x1b[0m\n  '
         return super().add_usage(usage, actions, groups, prefix)
 
     def _split_lines(self, text, width):
@@ -523,9 +587,9 @@ class CustomHelpFormatter(argparse.HelpFormatter):
 
 def parse_args() -> argparse.Namespace:
     parser = CustomArgumentParser(
-        description=__doc__,
+        description='\x1b[' + color_dict['BLUE'] + __doc__ + '\x1b[0m',
         formatter_class=CustomHelpFormatter,
-        usage='%(prog)s [options] username [...]',
+        usage='\x1b[' + color_dict['GREEN'] + '%(prog)s [options] username [...]' + '\x1b[0m',
         add_help=False,
         epilog='\n'
     )
@@ -541,8 +605,8 @@ def parse_args() -> argparse.Namespace:
     grp_cache = parser.add_argument_group(title='Caching')
 
     grp_cache.add_argument(
-        '-c', '--use-cache', action='store_true',
-        help='Do not fetch data, only use cached info'
+        '-o', '--overwrite', action='store_true',
+        help='Overwrite existing metadata'
     )
     grp_cache.add_argument(
         '-n', '--no-save-imgs', action='store_true',
@@ -551,7 +615,7 @@ def parse_args() -> argparse.Namespace:
 
     grp_limits = parser.add_argument_group(title='Limits')
 
-    grp_limits.add_argument(
+    grp_limits.add_argument( # none?
         '-m', '--max-pages', type=int, default=MAX_PAGES, metavar='<num>', # add <num> as default?
         help='Max pages to parse (default: %(default)d)'
     )
@@ -587,7 +651,9 @@ def parse_args() -> argparse.Namespace:
     #         sys.exit(2)
 
 
-def main(username: List[str], use_cache: bool, no_save_imgs: bool, max_pages: int, max_images: Optional[int], page_images: int, log_level: str, **_kw):
+def main(
+    username: List[str], overwrite: bool, no_save_imgs: bool, max_pages: int, max_images: int, page_images: int, log_level: str, **_kw):
+
     #todo allow int
     log_level = log_level.upper()
     if log_level != DEFAULT_LOGLEVEL:
@@ -599,40 +665,36 @@ def main(username: List[str], use_cache: bool, no_save_imgs: bool, max_pages: in
         lo.s(f'Running for {user}')
         scraper.user = user
 
-        #todo fix to default to fetching if cant find pickle, or just use overwrite
-        if use_cache:
-            prof = scraper.load_pickle('profile')
-            media = [
-                scraper.convert_node(
-                    scraper.load_pickle(fn)
-                )
-                for fn in glob(f'{PICKLE_DIR}{user}/m_*.pkl')
-            ]
-            data = (prof, media)
-        else:
-            data = scraper.scrape(max_pages=max_pages)
-            scraper.save_cookies()
+        total_possible_imgs = 12 + ((max_pages - 1) * 50)
+        if max_images > total_possible_imgs:
+            lo.w(f'Lowering max images from {max_images} to {total_possible_imgs}')
+            max_images = total_possible_imgs
 
-        if data is not None:
-            prof, media = data
+        data = scraper.scrape(max_pages=max_pages, max_images=max_images, overwrite=overwrite)
+        scraper.save_cookies()
 
-            lo.i(f'Found {len(media)} items.')
+        if data is None:
+            return
 
-            media_sort = sorted(media, key=lambda x: x.likes, reverse=True)
-            if max_images is not None:
-                media_sort = media_sort[:max_images]
+        prof, media = data
 
-            if not no_save_imgs:
-                lo.i(f'Saving images ({len(media_sort)})...')
-                for m in media_sort:
-                    scraper.save_media(m)
+        lo.i(f'Found {len(media)} items.')
 
-            html = scraper.gen_html(prof, media_sort, page_images)
+        media_sort = sorted(media, key=lambda x: x.likes, reverse=True)
+        if max_images is not None:
+            media_sort = media_sort[:max_images]
 
-            filename = HTML_DIR + user + '.html'
-            with open(filename, 'w') as f:
-                f.writelines(html)
-                lo.s(f'Wrote to {filename}')
+        if not no_save_imgs:
+            lo.i(f'Saving images ({len(media_sort)})...')
+            for m in media_sort:
+                scraper.save_media(m)
+
+        html = scraper.gen_html(prof, media_sort, page_images)
+
+        filename = HTML_DIR + user + '.html'
+        with open(filename, 'w') as f:
+            f.writelines(html)
+            lo.s(f'Wrote to {filename}')
 
     lo.s('Done')
 
