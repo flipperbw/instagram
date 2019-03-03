@@ -18,6 +18,7 @@ from mimetypes import guess_extension
 from pprint import pformat
 from typing import Dict, List, Union
 
+from colored import fg, attr, stylize
 import requests
 from jinja2 import Environment, FileSystemLoader
 from utils.logs import log_init
@@ -522,10 +523,10 @@ class InstaGet:
         )
 
 
-color_dict = {
-    'RED': '1;31m', 'GREEN': '1;32m',
-    'YELLOW': '1;33m', 'BLUE': '1;36m'
-}
+BLUE  = fg(153)
+RED   = fg(160)
+GRAY  = fg(245)
+RESET = attr('reset')
 
 class CustomArgumentParser(argparse.ArgumentParser):
     def print_help(self, file=None):
@@ -535,21 +536,13 @@ class CustomArgumentParser(argparse.ArgumentParser):
 
     def exit(self, status=0, message=None):
         if message:
-            self._print_message('\n' + message + '\n', sys.stderr, color_dict['RED'])
+            self._print_message(f'\n{stylize(message, RED)}\n', sys.stderr)
         sys.exit(status)
 
     def error(self, message):
         self.print_usage(sys.stderr)
         self.exit(2, f'Error: {message}')
 
-    def _print_message(self, message, file=None, color=None):
-        if color is None:
-            super()._print_message(message, file)
-        else:
-            if not message: return
-            if file is None: file = sys.stderr
-            # file.write('\x1b[' + color + 'm' + message.strip() + '\x1b[0m\n')
-            file.write('\x1b[' + color + message + '\x1b[0m')
 
 class CustomHelpFormatter(argparse.HelpFormatter):
     def __init__(self, prog):
@@ -559,7 +552,7 @@ class CustomHelpFormatter(argparse.HelpFormatter):
 
     def add_usage(self, usage, actions, groups, prefix=None):
         if prefix is None:
-            prefix = '\x1b[' + color_dict['GREEN'] + 'Usage:' + '\x1b[0m\n  '
+            prefix = f'{stylize("Usage:", BLUE)}\n  '
         return super().add_usage(usage, actions, groups, prefix)
 
     def _split_lines(self, text, width):
@@ -587,9 +580,9 @@ class CustomHelpFormatter(argparse.HelpFormatter):
 
 def parse_args() -> argparse.Namespace:
     parser = CustomArgumentParser(
-        description='\x1b[' + color_dict['BLUE'] + __doc__ + '\x1b[0m',
+        description=f'{stylize(__doc__, GRAY)}',
+        usage=f'{stylize("%(prog)s [options] username [...]", BLUE)}',
         formatter_class=CustomHelpFormatter,
-        usage='\x1b[' + color_dict['GREEN'] + '%(prog)s [options] username [...]' + '\x1b[0m',
         add_help=False,
         epilog='\n'
     )
