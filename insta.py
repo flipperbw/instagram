@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 
+"""Fetch data from instagram and create custom HTML pages."""
+
 import argparse
 import hashlib
 import json
 import os
 import pickle
 import re
+import shutil
+import textwrap
 import time
 from datetime import datetime
 from glob import glob
@@ -16,6 +20,8 @@ from typing import Dict, List, Optional, Union
 import requests
 from jinja2 import Environment, FileSystemLoader
 from utils.logs import log_init
+
+__version__ = 1.0
 
 DEFAULT_LOGLEVEL = 'INFO'
 lo = log_init(DEFAULT_LOGLEVEL)
@@ -30,7 +36,10 @@ MAX_IMGS = 250
 
 #RELOAD = False
 
-PAGE_ITEMS = 16
+PAGE_ITEMS = 20
+GRID_TYPE = 'sm'
+# PAGE_ITEMS = 16
+# GRID_TYPE = 'md'
 
 # -
 
@@ -112,7 +121,7 @@ class InstaGet:
 
         self.last_request = None
 
-        self.user = None
+        self.user: str = None
 
     def _sleep(self, secs: float = None):
         if secs is None:
@@ -467,71 +476,163 @@ class InstaGet:
                 'location': location
             })
 
-        return template.render(all_data=all_data, max_items=page_images)
+        return template.render(
+            all_data=all_data, max_items=page_images, grid_type=GRID_TYPE
+        )
 
+
+class CustomArgumentParser(argparse.ArgumentParser):
+    def print_help(self, file=None):
+        super().print_help(file)
+        if self.epilog and set(self.epilog) == {'\n'}:
+            self._print_message(self.epilog, file)
+
+class CustomHelpFormatter(argparse.HelpFormatter):
+    def __init__(self, prog):
+        width = min(shutil.get_terminal_size((80, 20))[0] - 2, 120)
+        max_help = 40
+        super().__init__(prog, max_help_position=max_help, width=width)
+
+    def add_usage(self, usage, actions, groups, prefix=None):
+        if prefix is None:
+            prefix = 'Usage:\n  '
+        return super().add_usage(usage, actions, groups, prefix)
+
+    def _split_lines(self, text, width):
+        split_text = text.split('\n')
+        return [line for para in split_text for line in textwrap.wrap(para, width)]
+
+    def _fill_text(self, text, width, indent):
+        split_text = text.split('\n')
+        return '\n'.join(
+            line for para in split_text for line in textwrap.wrap(
+                para, width, initial_indent=indent, subsequent_indent=indent
+            )
+        )
+
+    def _format_action_invocation(self, action):
+        if not action.option_strings or action.nargs == 0:
+            act_fmt = super()._format_action_invocation(action)
+            if action.nargs == argparse.ONE_OR_MORE:
+                return f'{act_fmt} [...]'
+            return act_fmt
+        else:
+            default = self._get_default_metavar_for_optional(action)
+            args_string = self._format_args(action, default)
+            return ', '.join(action.option_strings) + ' %s' % args_string
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description='Fetch data from instagram and create custom HTML pages', formatter_class=argparse.RawTextHelpFormatter)
+    parser = CustomArgumentParser(
+        description=__doc__,
+        formatter_class=CustomHelpFormatter,
+        usage='%(prog)s [options] username [...]',
+        add_help=False,
+        epilog='\n'
+    )
 
-    parser.add_argument('username', type=str,
-                        help='Instagram username')
-    parser.add_argument('-c', '--cache', action='store_true',
-                        help='Do not fetch data, only use cached data')
-    parser.add_argument('-n', '--no-save-imgs', action='store_true',
-                        help='Do not save thumbnails, use instagram URLs')
-    parser.add_argument('-m', '--max-pages', type=int, default=MAX_PAGES,
-                        help='Max pages to parse')
-    parser.add_argument('-i', '--max-images', type=int, default=MAX_IMGS,
-                        help='Max images to display in HTML')
-    parser.add_argument('-p', '--page-images', type=int, default=PAGE_ITEMS,
-                        help='Max images to display per page in HTML')
-    parser.add_argument('-l', '--log-level', type=str, default=DEFAULT_LOGLEVEL, choices=[l.lower() for l in lo.levels],
-                        help='Log level for output')
+    parser._positionals.title = 'Required'
+    parser._optionals.title = 'Flags'
+
+    parser.add_argument(
+        'username', nargs='+', type=str,
+        help='Instagram username'
+    )
+
+    grp_cache = parser.add_argument_group(title='Caching')
+
+    grp_cache.add_argument(
+        '-c', '--use-cache', action='store_true',
+        help='Do not fetch data, only use cached info'
+    )
+    grp_cache.add_argument(
+        '-n', '--no-save-imgs', action='store_true',
+        help='Do not save thumbnails, use instagram URLs'
+    )
+
+    grp_limits = parser.add_argument_group(title='Limits')
+
+    grp_limits.add_argument(
+        '-m', '--max-pages', type=int, default=MAX_PAGES, metavar='<num>', # add <num> as default?
+        help='Max pages to parse (default: %(default)d)'
+    )
+    grp_limits.add_argument(
+        '-i', '--max-images', type=int, default=MAX_IMGS, metavar='<num>',
+        help='Max images to display in HTML (default: %(default)d)'
+    )
+    grp_limits.add_argument(
+        '-p', '--page-images', type=int, default=PAGE_ITEMS, metavar='<num>',
+        help='Max images to display per page in HTML (default: %(default)d)'
+    )
+
+    grp_debug = parser.add_argument_group(title='Debug')
+
+    grp_debug.add_argument(
+        '-h', '--help', action='help', default=argparse.SUPPRESS,
+        help='Show this help message and exit'
+    )
+    grp_debug.add_argument(
+        '-v', '--version', action='version', version=f'{__version__}',
+        help="Show the version number and exit"
+    )
+    grp_debug.add_argument(
+        '-l', '--log-level', type=str, default=DEFAULT_LOGLEVEL.lower(), choices=[l.lower() for l in lo.levels], metavar='<lvl>',
+        help='Log level for output (default: %(default)s)\nChoices: {%(choices)s}'
+    )
 
     return parser.parse_args()
+    # try:
+    # except SystemExit as err:
+    #     if err.code == 2:
+    #         parser.print_help()
+    #         sys.exit(2)
 
-def main(username: str, cache: bool, no_save_imgs: bool, max_pages: int, max_images: Optional[int], page_images: int, log_level: str, **_kw):
+
+def main(username: List[str], use_cache: bool, no_save_imgs: bool, max_pages: int, max_images: Optional[int], page_images: int, log_level: str, **_kw):
     #todo allow int
     log_level = log_level.upper()
     if log_level != DEFAULT_LOGLEVEL:
         lo.set_level(log_level)
 
     scraper = InstaGet(cookiejar=COOKIE_NAME)
-    scraper.user = username
 
-    if cache:
-        prof = scraper.load_pickle('profile')
-        media = [
-            scraper.convert_node(
-                scraper.load_pickle(fn)
-            )
-            for fn in glob(f'{PICKLE_DIR}{username}/m_*.pkl')
-        ]
-        data = (prof, media)
-    else:
-        data = scraper.scrape(max_pages=max_pages)
-        scraper.save_cookies()
+    for user in username:
+        lo.s(f'Running for {user}')
+        scraper.user = user
 
-    if data is not None:
-        prof, media = data
+        #todo fix to default to fetching if cant find pickle, or just use overwrite
+        if use_cache:
+            prof = scraper.load_pickle('profile')
+            media = [
+                scraper.convert_node(
+                    scraper.load_pickle(fn)
+                )
+                for fn in glob(f'{PICKLE_DIR}{user}/m_*.pkl')
+            ]
+            data = (prof, media)
+        else:
+            data = scraper.scrape(max_pages=max_pages)
+            scraper.save_cookies()
 
-        lo.i(f'Found {len(media)} items.')
+        if data is not None:
+            prof, media = data
 
-        media_sort = sorted(media, key=lambda x: x.likes, reverse=True)
-        if max_images is not None:
-            media_sort = media_sort[:max_images]
+            lo.i(f'Found {len(media)} items.')
 
-        if not no_save_imgs:
-            lo.i(f'Saving images ({len(media_sort)})...')
-            for m in media_sort:
-                scraper.save_media(m)
+            media_sort = sorted(media, key=lambda x: x.likes, reverse=True)
+            if max_images is not None:
+                media_sort = media_sort[:max_images]
 
-        html = scraper.gen_html(prof, media_sort, page_images)
+            if not no_save_imgs:
+                lo.i(f'Saving images ({len(media_sort)})...')
+                for m in media_sort:
+                    scraper.save_media(m)
 
-        filename = HTML_DIR + username + '.html'
-        with open(filename, 'w') as f:
-            f.writelines(html)
-            lo.s(f'Wrote to {filename}')
+            html = scraper.gen_html(prof, media_sort, page_images)
+
+            filename = HTML_DIR + user + '.html'
+            with open(filename, 'w') as f:
+                f.writelines(html)
+                lo.s(f'Wrote to {filename}')
 
     lo.s('Done')
 

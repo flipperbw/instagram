@@ -17,14 +17,16 @@ function whichTransitionEvent() {
 
 var transitionEvent = whichTransitionEvent();
 
-var transitionEndCallback = function(el) {
-    console.log(el);
+var transitionEndCallback = function(evt) {
+    var el = evt.target;
     el.removeEventListener(transitionEvent, transitionEndCallback);
     el.classList.remove('hidden');
     el.style.opacity = null;
 };
 
 function swap(idx) {
+    window.scrollTo(0, 0);
+
     var sections = document.getElementsByClassName('section');
 
     var curr_hash = window.location.hash;
@@ -48,32 +50,27 @@ function swap(idx) {
         if (idx.indexOf('#section-') > -1) {
             dest_id = idx.replace('#section-', '');
         }
-        else if (idx === 'prev' || idx === 'next') {
-            if (idx === 'prev') {
-                if (sections.length >= curr && curr > 1) {
-                    dest_id = curr - 1;
-                }
+        else if (idx === 'prev') {
+            if (sections.length >= curr && curr > 1) {
+                dest_id = curr - 1;
             }
-            else if (idx === 'next') {
-                if (1 <= curr && curr < sections.length) {
-                    dest_id = curr + 1;
-                }
-            }
-
-            if (dest_id) {
-                window.location.hash = `#section-${dest_id}`;
-            }
-
-            window.scrollTo(0, 0);
         }
-
-        dest_id = parseInt(dest_id);
+        else if (idx === 'next') {
+            if (1 <= curr && curr < sections.length) {
+                dest_id = curr + 1;
+            }
+        }
+        else {
+            dest_id = idx;
+        }
     }
     else {
         dest_id = idx;
     }
 
-    //if (!dest_id) {}
+    dest_id = parseInt(dest_id);
+
+    if (!dest_id) dest_id = 1;
 
     var el_id = `section-${dest_id}`;
 
@@ -81,6 +78,9 @@ function swap(idx) {
     if (!target) {
         window.location.hash = '';
         target = document.getElementById('section-1');
+    }
+    else if (curr !== dest_id) {
+        window.location.hash = el_id;
     }
 
     for (let el of sections) {
@@ -153,7 +153,9 @@ function swap(idx) {
 swap(window.location.hash);
 
 for (let lia of document.querySelectorAll('#pagination-compact li a')) {
-    lia.onclick = () => { swap(lia.dataset.section_id); };
+    lia.addEventListener("click", function() {
+        swap(lia.dataset.sectionid);
+    });
 }
 
 function forceDownload(blob, filename) {
@@ -189,13 +191,12 @@ function downloadResource(url, filename) {
 }
 
 var runDownload = function() {
-    let url = this.dataset.dl_url;
+    let url = this.dataset.dlurl;
     if (!url) return;
     downloadResource(url);
 };
 
 for (let sp of document.querySelectorAll('span.download')) {
-    console.log(sp);
     sp.onclick = runDownload;
 }
 
@@ -224,8 +225,6 @@ var cap_fn = function(trigger) {
 
 var opt = { caption: cap_fn, onOpen: make_vid };
 
-import { Luminous } from 'luminous-lightbox';
-
-for (var a of document.querySelectorAll('a.zimg')) {
-    Luminous(a, opt);
+for (let a of document.querySelectorAll('a.zimg')) {
+    new window.Luminous(a, opt);
 }

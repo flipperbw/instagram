@@ -9,11 +9,13 @@
 
     <link rel="stylesheet" href="templates/main.css" />
 
+    <script type="text/javascript" defer src="templates/Luminous.min.js"></script>
     <script type="text/javascript" defer src="templates/main.js"></script>
 </head>
 <body>
-    <div id="all-imgs">
-    {% for n in range(0, all_data | length, max_items) %}
+    <div id="all-imgs" data-gridtype="{{ grid_type }}">
+    {% set data_len = all_data | length %}
+    {% for n in range(0, data_len, max_items) %}
         <div id="section-{{ (n // max_items) + 1 }}" class="section" style="display: none;">
         {% for data in all_data[n: n + max_items] %}
             <div id="img-{{ loop.index + n }}" class="img lum-loading">
@@ -34,7 +36,7 @@
                     <a target="_blank" href="{{ data.big_url }}">
                         <span data-icon="&#127758;" class="ico external"></span>
                     </a>
-                    <span data-icon="&#128190;" class="ico download" data-dl-url="{{ data.save_url }}"></span>
+                    <span data-icon="&#128190;" class="ico download" data-dlurl="{{ data.save_url }}"></span>
                 </div>
             </div>
         {% endfor %}
@@ -46,18 +48,18 @@
         <div id="pagination-compact">
             <ul>
                 <li id="goto-prev">
-                    <a data-section-id="prev">&lt;</a>
+                    <a data-sectionid="prev">&lt;</a>
                 </li>
 
-                {% for n in range(((all_data | length) // max_items) + 1) %}
+                {% for n in range((data_len / max_items) | round(0, 'ceil') | int) %}
                 {% set idx = n + 1 %}
                 <li id="goto-section-{{ idx }}">
-                    <a href="#section-{{ idx }}" data-section-id={{ idx }}>{{ idx }}</a>
+                    <a data-sectionid={{ idx }}>{{ idx }}</a>
                 </li>
                 {% endfor %}
 
                 <li id="goto-next">
-                    <a data-section-id="next">&gt;</a>
+                    <a data-sectionid="next">&gt;</a>
                 </li>
             </ul>
         </div>

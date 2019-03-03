@@ -1,10 +1,17 @@
 body {
-    font-family: Helvetica, sans-serif;
+    font-family: Ubuntu, Helvetica, sans-serif;
 }
 
-div[id^="section-"] {
+#all-imgs[data-gridtype="sm"] div[id^="section-"] {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(285px, max-content));
+    grid-auto-rows: minmax(150px, auto);
+    grid-gap: 24px;
+    margin: 12px 24px;
+}
+#all-imgs[data-gridtype="md"] div[id^="section-"] {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, max-content));
     grid-auto-rows: minmax(200px, auto);
     grid-gap: 14px;
     margin: 10px 14px;
