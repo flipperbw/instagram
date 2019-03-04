@@ -2,15 +2,14 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Instagram Images</title>
+    <title>{{ user }}</title>
 
-    <link rel="stylesheet" href="templates/normalize.css" />
-    <link rel="stylesheet" href="templates/luminous-basic.min.css" />
+    <link rel="stylesheet" href="css/normalize.css" />
+    <link rel="stylesheet" href="css/luminous-basic.min.css" />
+    <link rel="stylesheet" href="css/main.css" />
 
-    <link rel="stylesheet" href="templates/main.css" />
-
-    <script type="text/javascript" defer src="templates/Luminous.min.js"></script>
-    <script type="text/javascript" defer src="templates/main.js"></script>
+    <script type="text/javascript" defer src="js/Luminous.min.js"></script>
+    <script type="text/javascript" defer src="js/main.js"></script>
 </head>
 <body>
     <div id="all-imgs" data-gridtype="{{ grid_type }}">
@@ -53,7 +52,7 @@
 
                 {% for n in range((data_len / max_items) | round(0, 'ceil') | int) %}
                 {% set idx = n + 1 %}
-                <li id="goto-section-{{ idx }}">
+                <li id="goto-{{ idx }}">
                     <a data-sectionid={{ idx }}>{{ idx }}</a>
                 </li>
                 {% endfor %}

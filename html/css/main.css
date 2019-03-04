@@ -2,14 +2,17 @@ body {
     font-family: Ubuntu, Helvetica, sans-serif;
 }
 
-#all-imgs[data-gridtype="sm"] div[id^="section-"] {
+#all-imgs div.section {
     display: grid;
+}
+
+#all-imgs[data-gridtype="sm"] div.section {
     grid-template-columns: repeat(auto-fit, minmax(285px, max-content));
     grid-auto-rows: minmax(150px, auto);
     grid-gap: 24px;
     margin: 12px 24px;
 }
-#all-imgs[data-gridtype="md"] div[id^="section-"] {
+#all-imgs[data-gridtype="md"] div.section {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(400px, max-content));
     grid-auto-rows: minmax(200px, auto);

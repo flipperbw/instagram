@@ -61,16 +61,17 @@ USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, li
 
 COOKIE_NAME = 'cookies'
 
-HTML_DIRNAME = 'html/'
-IMGS_DIRNAME = 'imgs/'
-THUMB_DIRNAME = 'thumbs/'
-TEMPLATE_DIRNAME = 'templates/'
 PICKLE_DIRNAME = 'pkls/'
-HTML_DIR = HTML_DIRNAME
-IMGS_DIR = HTML_DIR + IMGS_DIRNAME
-THUMB_DIR = IMGS_DIR + THUMB_DIRNAME
-TEMPLATE_DIR = HTML_DIR + TEMPLATE_DIRNAME
+TEMPLATE_DIRNAME = 'templates/'
+HTML_DIRNAME = 'html/'
+IMGS_DIRNAME = 'img/'
+THUMB_DIRNAME = 'thumb/'
+
 PICKLE_DIR = PICKLE_DIRNAME
+TEMPLATE_DIR = TEMPLATE_DIRNAME
+HTML_DIR = HTML_DIRNAME
+IMG_DIR = HTML_DIR + IMGS_DIRNAME
+THUMB_DIR = IMG_DIR + THUMB_DIRNAME
 
 
 class PartialContentException(Exception):
@@ -474,14 +475,13 @@ class InstaGet:
 
         return profile_data, all_media
 
-    @staticmethod
-    def gen_html(_prof: dict, media_sort: List[Media], page_images: int = PAGE_ITEMS):
+    def gen_html(self, _prof: dict, media_sort: List[Media], page_images: int = PAGE_ITEMS):
         lo.i('Creating html...')
 
-        re_html = re.compile(r'^{}'.format(HTML_DIR))
-
         env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
-        template = env.get_template('template.html')
+        template = env.get_template('main.html')
+
+        re_html = re.compile(r'^{}'.format(HTML_DIR))
 
         all_data = []
         for m in media_sort:
@@ -519,7 +519,7 @@ class InstaGet:
             })
 
         return template.render(
-            all_data=all_data, max_items=page_images, grid_type=GRID_TYPE
+            all_data=all_data, user=self.user, max_items=page_images, grid_type=GRID_TYPE
         )
 
 
