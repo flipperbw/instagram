@@ -43,7 +43,7 @@ MAX_IMGS = 250
 #GRID_TYPE = 'sm' # TODO does not work with video, too wide text for subdata
 PAGE_ITEMS = 16
 GRID_TYPE = 'md'
-MAX_CAPTION = 300  # TODO better in html?
+MAX_CAPTION = 275  # TODO better in html?
 
 # -
 
@@ -694,6 +694,7 @@ def main(
         if not no_save_imgs:
             lo.i(f'Saving images ({len(media_sort)})...')
             for m in media_sort:
+                # TODO print stdout
                 scraper.save_media(m)
 
         html = scraper.gen_html(prof, media_sort, page_images)
