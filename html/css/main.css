@@ -160,11 +160,19 @@ div.datedown span.ico {
 
 .lum-lightbox-inner .lum-lightbox-caption {
     margin: 8px 150px;
+    padding-left: 16px;
+    padding-right: 16px;
     max-width: unset;
     font-size: 18px;
     text-shadow: -1px -1px 3px #000, 1px -1px 3px #000, -1px 1px 3px #000, 1px 1px 3px #000;
     line-height: 1.25;
 }
+
+/*.caption-text {*/
+    /*overflow: hidden;*/
+    /*display: -webkit-box;*/
+    /*-webkit-line-clamp: 1;*/
+/*}*/
 
 .lum-lightbox.lum-closing, .lum-lightbox.lum-opening {
     animation: lum-noop 1ms;

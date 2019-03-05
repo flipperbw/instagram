@@ -9,25 +9,37 @@ var li_prev = document.getElementById('goto-prev');
 var li_next = document.getElementById('goto-next');
 var pag_lias = pag_div.querySelectorAll('#pagination-compact li a');
 
-function setp(idx) {
-    if (!idx) {
+
+function setTitle(dest) {
+    document.title = document.title.split(':')[0] + `: Page ${dest}`;
+}
+
+function setp(dest) {
+    var o_params = urlParams.toString();
+
+    var i = dest;
+    if (!i) {
         urlParams.delete('p');
+        i = 1;
     }
     else {
-        urlParams.set('p', idx);
+        urlParams.set('p', i);
     }
 
+    var n_params = urlParams.toString();
     var s = '';
-    var p = urlParams.toString();
-    var title = document.title.split(':')[0];
-
-    if (p) {
-        s = `?${p}`;
-        title += `: Page ${idx}`
+    if (n_params) {
+        s = `?${n_params}`;
     }
 
-    history.pushState(null, title, s);
-    //window.location.search = s;
+    var data = {p: i};
+
+    if (o_params === n_params) {
+        history.replaceState(data, '', s);
+        return;
+    }
+
+    history.pushState(data, '', s);
 }
 
 function getp() {
@@ -41,6 +53,7 @@ function getCurr() {
     let curr = parseInt(curr_str);
     if (!curr || curr <= 1 || curr > sections.length) {
         setp(1);
+        setTitle(1);
         return 1;
     }
 
@@ -143,44 +156,53 @@ function loadNext(dest) {
     }
 }
 
+function swap(idx, addHist=true) {
+    var dest, dest_div;
 
-function swap(idx) {
-    var curr = getCurr();
-
-    var dest;
-    if (typeof idx === "undefined") {
-        dest = curr;
-    }
-    else {
-        dest = getDest(idx, curr);
-    }
-
-    var curr_div = getSect(curr);
-    if (!curr_div) return;
-
-    var dest_div;
-    if (curr === dest) {
-        dest_div = curr_div;
-    }
-    else {
+    if (addHist === false) {
+        for (let sec of sections) {
+            sec.style.display = 'none';
+        }
+        dest = idx;
         dest_div = getSect(dest);
-        if (!dest_div) return;
-        window.scrollTo(0, 0);
+    }
+    else {
+        var curr = getCurr();
+        var curr_div = getSect(curr);
+        if (!curr_div) return;
+
+
+        if (typeof idx === "undefined") {
+            dest = curr;
+        } else {
+            dest = getDest(idx, curr);
+        }
+
+        if (dest === curr) {
+            dest_div = curr_div;
+        }
+        else {
+            dest_div = getSect(dest);
+            if (!dest_div) return;
+            curr_div.style.display = 'none';
+        }
+
         setp(dest);
-        curr_div.style.display = 'none';
+        setTitle(dest);
     }
 
+    window.scrollTo(0, 0);
     dest_div.style.display = null;
 
     //probably has an issue if navigating too fast
-    var target_new = dest_div.querySelectorAll('a.zimg > img[data-src]');
+    var target_new = dest_div.querySelectorAll('a.zimg > [data-src]');
     var imgs_new = target_new.length;
 
     if (imgs_new === 0) {
         loadNext(dest + 1);
     }
     else {
-        var target_all = dest_div.querySelectorAll('a.zimg > img');
+        var target_all = dest_div.querySelectorAll('a.zimg > img, a.zimg > video');
         var imgs_total = target_all.length;
         var imgs_loaded = imgs_total - imgs_new;
 
@@ -337,3 +359,7 @@ document.addEventListener("keydown", function (event) {
             break;
     }
 }, true);
+
+window.addEventListener('popstate', function(event) {
+  swap(event.state.p, false);
+});

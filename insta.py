@@ -17,6 +17,7 @@ from glob import glob
 from mimetypes import guess_extension
 from pprint import pformat
 from typing import Dict, List, Union
+import math
 
 from colored import fg, attr, stylize
 import requests
@@ -38,10 +39,11 @@ MAX_IMGS = 250
 
 #RELOAD = False
 
-PAGE_ITEMS = 20
-GRID_TYPE = 'sm'
-# PAGE_ITEMS = 16
-# GRID_TYPE = 'md'
+#PAGE_ITEMS = 20
+#GRID_TYPE = 'sm' # TODO does not work with video, too wide text for subdata
+PAGE_ITEMS = 16
+GRID_TYPE = 'md'
+MAX_CAPTION = 300  # TODO better in html?
 
 # -
 
@@ -53,6 +55,7 @@ RETRY_DELAY = 2
 
 BASE_URL = 'https://www.instagram.com/'
 GQL_URL = BASE_URL + 'graphql/query/?query_hash=f2405b236d85e8296cf30347c9f08c2a&variables={}'
+GQL_VARS_FIRST = '{{"id":"{0}","first":50}}'
 GQL_VARS = '{{"id":"{0}","first":50,"after":"{1}"}}'
 
 #https://www.instagram.com/user/?__a=1 ? seems to be working again. rate limited?
@@ -304,7 +307,7 @@ class InstaGet:
 
         return Media(**info)
 
-    def get_media(self, data: dict):
+    def get_media(self, data: dict, first: bool = False):
         media = data['edge_owner_to_timeline_media']
         if not media:
             return
@@ -318,6 +321,15 @@ class InstaGet:
         page_info = media.get('page_info')
         has_next_page = page_info['has_next_page']
         end_cursor = page_info['end_cursor']
+
+        ret = {
+            'count': count,
+            'has_next_page': has_next_page,
+            'end_cursor': end_cursor
+        }
+
+        if first:
+            return ret
 
         media_list: List[Media] = []
 
@@ -334,12 +346,9 @@ class InstaGet:
 
             media_list.append(info)
 
-        return {
-            'count': count,
-            'has_next_page': has_next_page,
-            'end_cursor': end_cursor,
-            'media_list': media_list
-        }
+        ret['media_list'] = media_list
+
+        return ret
 
     def save_cookies(self):
         if self.cookiejar:
@@ -352,7 +361,11 @@ class InstaGet:
         self.session.headers.update({'x-instagram-gis': ig_gis})
 
     def get_gql(self, qid, end_cursor):
-        params = GQL_VARS.format(qid, end_cursor)
+        if end_cursor is None:
+            params = GQL_VARS_FIRST.format(qid)
+        else:
+            params = GQL_VARS.format(qid, end_cursor)
+
         self.update_ig_gis_header(params)
 
         resp = self.get_txt(GQL_URL.format(params), is_json=True)
@@ -371,27 +384,24 @@ class InstaGet:
         return resp
 
     def fetch_media(self, profile_id: str, max_pages: int, page_data: dict):
-        lo.i(f'Parsing page 1 of {max_pages}...')
-
-        first_page_data = self.get_media(page_data)
+        first_page_data = self.get_media(page_data, first=True)
 
         total_items = first_page_data['count']
+        has_next = first_page_data['has_next_page']
+        end_cursor = None
 
         lo.i(f'{total_items:,} total items')
 
-        all_media = first_page_data['media_list']
-
-        actual_pages = ((total_items - len(all_media)) // 50) + 2
+        actual_pages = math.ceil(total_items / 50)
         if actual_pages < max_pages:
             lo.w(f'Lowering total pages from {max_pages} to {actual_pages}')
             max_pages = actual_pages
 
-        has_next = first_page_data['has_next_page']
-        end_cursor = first_page_data['end_cursor']
+        all_media: List[Media] = []
+        pnum = 1
 
-        pnum = 2
-
-        while pnum <= max_pages:  # do max items instead? or always 50, but 12 on first page
+        # do max items instead? or always 50, but 12 on first page
+        while pnum <= max_pages:
             if not has_next:
                 lo.w('No more entries.')
                 break
@@ -492,12 +502,16 @@ class InstaGet:
             else:
                 thumb_url = m.thumbnail_src
 
+            # TODO hide if cant find this link
             if m.is_video:
                 display_url = m.video_url
             else:
                 display_url = m.display_url
 
-            caption = '<br />'.join(cap.strip() for cap in m.captions)
+            caption = '<br />'.join(
+                cap.strip()[:max(0, MAX_CAPTION - 3)] + ' [...]' if len(cap.strip()) > MAX_CAPTION else cap.strip()
+                for cap in m.captions
+            )
 
             if isinstance(m.location, dict):
                 location = m.location.get('name')
@@ -658,7 +672,7 @@ def main(
         lo.s(f'Running for {user}')
         scraper.user = user
 
-        total_possible_imgs = 12 + ((max_pages - 1) * 50)
+        total_possible_imgs = max_pages * 50
         if max_images > total_possible_imgs:
             lo.w(f'Lowering max images from {max_images} to {total_possible_imgs}')
             max_images = total_possible_imgs
