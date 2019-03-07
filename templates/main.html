@@ -46,18 +46,20 @@
     <div id="pagination" class="clearfix">
         <div id="pagination-compact">
             <ul>
-                <li id="goto-prev">
+                {% set max_pages = (data_len / max_items) | round(0, 'ceil') | int %}
+                {% set li_class = 'disabled' if max_pages <= 1 else '' %}
+                <li id="goto-prev" class="{{ li_class }}">
                     <a data-sectionid="prev">&lt;</a>
                 </li>
 
-                {% for n in range((data_len / max_items) | round(0, 'ceil') | int) %}
+                {% for n in range(max_pages) %}
                 {% set idx = n + 1 %}
                 <li id="goto-{{ idx }}">
                     <a data-sectionid={{ idx }}>{{ idx }}</a>
                 </li>
                 {% endfor %}
 
-                <li id="goto-next">
+                <li id="goto-next" class="{{ li_class }}">
                     <a data-sectionid="next">&gt;</a>
                 </li>
             </ul>

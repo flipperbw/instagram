@@ -91,9 +91,9 @@ function whichTransitionEvent() {
     var el = document.createElement("fakeelement");
 
     var transitions = {
-        "transition"      : "transitionend",
-        "OTransition"     : "oTransitionEnd",
-        "MozTransition"   : "transitionend",
+        "transition": "transitionend",
+        "OTransition": "oTransitionEnd",
+        "MozTransition": "transitionend",
         "WebkitTransition": "webkitTransitionEnd"
     };
 
@@ -103,6 +103,7 @@ function whichTransitionEvent() {
         }
     }
 }
+
 var transitionEvent = whichTransitionEvent();
 
 function transitionEndCb(evt) {
@@ -132,6 +133,13 @@ function imgErrorCb() {
     clearLoading(this);
 }
 
+/**
+ * Returns a promise on an event listener
+ * @param {Element} el Element
+ * @param {String} typ Event listener type
+ * @param {Function} fnc Function to run on event
+ * @returns {Promise}
+ */
 function createEventPromise(el, typ, fnc) {
     return new Promise(function(res, _rej) {
         el.addEventListener(typ, function(evt) {
@@ -156,7 +164,7 @@ function loadNext(dest) {
     }
 }
 
-function swap(idx, addHist=true) {
+function swap(idx, addHist = true) {
     var dest, dest_div;
 
     if (addHist === false) {
@@ -174,7 +182,8 @@ function swap(idx, addHist=true) {
 
         if (typeof idx === "undefined") {
             dest = curr;
-        } else {
+        }
+        else {
             dest = getDest(idx, curr);
         }
 
@@ -209,7 +218,7 @@ function swap(idx, addHist=true) {
         for (let idata of target_new) {
             var promise_error = createEventPromise(idata, 'error', imgErrorCb);
             var promise_load = createEventPromise(idata, 'load', imgLoadCb);
-            var promise_trans = createEventPromise(idata, transitionEvent, transitionEndCb);
+            var _promise_trans = createEventPromise(idata, transitionEvent, transitionEndCb);
 
             promise_error.then(el => {
                 imgs_loaded++;
@@ -219,7 +228,8 @@ function swap(idx, addHist=true) {
                     loadNext(dest + 1);
                 }
             });
-            Promise.all([promise_load, promise_trans]).then(_els => {
+            //Promise.all([promise_load, promise_trans]).then(_els => {
+            promise_load.then(_els => {
                 imgs_loaded++;
                 if (imgs_loaded === imgs_total) {
                     // is this scope wrong?
@@ -231,31 +241,28 @@ function swap(idx, addHist=true) {
         }
     }
 
-    //technically could put this at top
-    if (sections.length <= 1) {
-        li_prev.classList.add('disabled');
-        li_next.classList.add('disabled');
-    }
-    else if (dest === 1) {
-        li_prev.classList.add('disabled');
-        li_next.classList.remove('disabled');
-    }
-    else if (dest === sections.length) {
-        li_next.classList.add("disabled");
-        li_prev.classList.remove('disabled');
-    }
-    else {
-        li_prev.classList.remove('disabled');
-        li_next.classList.remove('disabled');
+    if (sections.length > 1) {
+        if (dest === 1) {
+            li_prev.classList.add('disabled');
+            li_next.classList.remove('disabled');
+        }
+        else if (dest === sections.length) {
+            li_next.classList.add("disabled");
+            li_prev.classList.remove('disabled');
+        }
+        else {
+            li_prev.classList.remove('disabled');
+            li_next.classList.remove('disabled');
+        }
+
+        for (let ali of all_lis) {
+            ali.classList.remove('active');
+        }
     }
 
-    for (let ali of all_lis) {
-        ali.classList.remove('active');
-    }
-
-    var li = document.getElementById(`goto-${dest}`);
-    if (li) {
-        li.classList.add("active");
+    var dest_li = document.getElementById(`goto-${dest}`);
+    if (dest_li) {
+        dest_li.classList.add("active");
     }
 }
 
@@ -340,13 +347,13 @@ var cap_fn = function(trigger) {
     return trigger.querySelector('div.txt').innerText;
 };
 
-var opt = { caption: cap_fn, onOpen: make_vid };
+var opt = {caption: cap_fn, onOpen: make_vid};
 
 for (let a of img_as) {
     new window.Luminous(a, opt);
 }
 
-document.addEventListener("keydown", function (event) {
+document.addEventListener("keydown", function(event) {
     if (event.defaultPrevented) return;
     switch (event.key) {
         case "Left":
@@ -361,5 +368,5 @@ document.addEventListener("keydown", function (event) {
 }, true);
 
 window.addEventListener('popstate', function(event) {
-  swap(event.state.p, false);
+    swap(event.state.p, false);
 });

@@ -5,11 +5,13 @@
 import argparse
 import hashlib
 import json
+import math
 import os
 import pickle
 import re
 import shutil
 import sys
+#import ansiwrap
 import textwrap
 import time
 from datetime import datetime
@@ -17,10 +19,9 @@ from glob import glob
 from mimetypes import guess_extension
 from pprint import pformat
 from typing import Dict, List, Union
-import math
 
-from colored import fg, attr, stylize
 import requests
+from colored import attr, fg, stylize
 from jinja2 import Environment, FileSystemLoader
 from utils.logs import log_init
 
@@ -48,9 +49,9 @@ MAX_CAPTION = 275  # TODO better in html?
 # -
 
 SLEEP_DELAY = 1
-SLEEP_DELAY_IMG = 0.25
+SLEEP_DELAY_IMG = 0.1
 CONNECT_TIMEOUT = 3
-MAX_RETRIES = 5
+MAX_RETRIES = 3
 RETRY_DELAY = 2
 
 BASE_URL = 'https://www.instagram.com/'
@@ -75,6 +76,17 @@ TEMPLATE_DIR = TEMPLATE_DIRNAME
 HTML_DIR = HTML_DIRNAME
 IMG_DIR = HTML_DIR + IMGS_DIRNAME
 THUMB_DIR = IMG_DIR + THUMB_DIRNAME
+
+HTML_TEMPLATE = 'main'
+
+#https://i.stack.imgur.com/KTSQa.png
+BLUE  = fg(153)
+RED   = fg(160)
+GREEN = fg(120)
+GRAY  = fg(245)
+RESET = attr('reset')
+
+ANSI_ESCAPE = re.compile(r'(\x9B|\x1B\[)[0-?]*[ -/]*[@-~]')
 
 
 class PartialContentException(Exception):
@@ -129,6 +141,12 @@ class InstaGet:
 
         self.user: str = None
 
+        self.jinja_env = Environment(
+            loader=FileSystemLoader(TEMPLATE_DIR),
+            trim_blocks=True,
+            lstrip_blocks=True
+        )
+
     def _sleep(self, secs: float = None):
         if secs is None:
             if not self.last_request:
@@ -155,8 +173,18 @@ class InstaGet:
                 response = self.session.get(
                     url, timeout=CONNECT_TIMEOUT, cookies=self.cookies, stream=stream
                 )
-                if response.status_code == 404:
+
+                status = response.status_code
+                if status in (403, 404, 429):
+                    if status == 403:
+                        lo.w(f'Forbidden: {url}')
+                    elif status == 404:
+                        lo.w(f'Not found: {url}')
+                    elif status == 429:
+                        lo.w(f'Rate limited: {url}')
+
                     return
+
                 response.raise_for_status()
 
                 if not stream:
@@ -181,16 +209,18 @@ class InstaGet:
                 self._set_last()
                 return response
 
-    def save_media(self, media: Media):
+    def save_media(self, media: Media, overwrite: bool = True):
         shortcode = media.shortcode
 
-        matches = glob(THUMB_DIR + shortcode + '.*')
-        matches_num = len(matches)
+        if not overwrite:
+            matches = glob(THUMB_DIR + shortcode + '.*')
+        else:
+            matches = []
 
         if matches:
             media.thumb_file = matches[0]
 
-            if matches_num == 1:  # more checks here on size, or set saved on media
+            if len(matches) == 1:  # more checks here on size, or set saved on media
                 lo.d(f'{media.thumb_file} already saved, skipping.')
             else:
                 lo.w(f'Found multiple files for {shortcode}: {", ".join(matches)}. Using {media.thumb_file}.')
@@ -199,6 +229,9 @@ class InstaGet:
             lo.d(f'Retrieving thumbnail for {shortcode}...')
 
             img_data = self.safe_get(media.thumbnail_src, secs=SLEEP_DELAY_IMG)
+            if img_data is None:
+                #lo.w(f'Could not fetch {media.thumbnail_src}')
+                return
 
             ext = guess_extension(img_data.headers.get('content-type', '').partition(';')[0].strip())
             if not ext:
@@ -220,11 +253,12 @@ class InstaGet:
 
         if resp is None:
             lo.e(f'No data for {url}')
+            return
+
+        if is_json:
+            return resp.json()
         else:
-            if is_json:
-                return resp.json()
-            else:
-                return resp.text  # todo: json?
+            return resp.text  # todo: json?
 
     def auth(self):
         self.session.headers.update({'Referer': BASE_URL})
@@ -308,6 +342,9 @@ class InstaGet:
         return Media(**info)
 
     def get_media(self, data: dict, first: bool = False):
+        if not data:
+            return
+
         media = data['edge_owner_to_timeline_media']
         if not media:
             return
@@ -369,8 +406,10 @@ class InstaGet:
         self.update_ig_gis_header(params)
 
         resp = self.get_txt(GQL_URL.format(params), is_json=True)
-
-        data = resp['data']['user']
+        if not resp:
+            data = {}
+        else:
+            data = resp['data']['user']
 
         return self.get_media(data)
 
@@ -379,8 +418,8 @@ class InstaGet:
         url = BASE_URL + self.user
 
         resp = self.get_txt(url)
-        if resp is None:
-            lo.e('Could not fetch profile')
+        #if resp is None:
+        #    lo.e('Could not fetch profile')
         return resp
 
     def fetch_media(self, profile_id: str, max_pages: int, page_data: dict):
@@ -409,8 +448,9 @@ class InstaGet:
             lo.i(f'Parsing page {pnum} of {max_pages}...')
 
             gql_data = self.get_gql(profile_id, end_cursor)
-
-            #lo.v('\n' + pformat(gql_data, indent=4))
+            if not gql_data:
+                lo.w('No GQL data.')
+                break
 
             all_media += gql_data['media_list']
 
@@ -485,12 +525,11 @@ class InstaGet:
 
         return profile_data, all_media
 
-    def gen_html(self, _prof: dict, media_sort: List[Media], page_images: int = PAGE_ITEMS):
+    def gen_html(self, _prof: dict, media_sort: List[Media], page_images = PAGE_ITEMS, template_name = HTML_TEMPLATE):
         lo.i('Creating html...')
 
-        env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
-        template = env.get_template('main.html')
-
+        env = self.jinja_env
+        template = env.get_template(f'{template_name}.html')
         re_html = re.compile(r'^{}'.format(HTML_DIR))
 
         all_data = []
@@ -532,15 +571,13 @@ class InstaGet:
                 'location': location
             })
 
-        return template.render(
-            all_data=all_data, user=self.user, max_items=page_images, grid_type=GRID_TYPE
-        )
+        if not all_data:
+            lo.w('No media to display.')
+        else:
+            return template.render(
+                all_data=all_data, user=self.user, max_items=page_images, grid_type=GRID_TYPE
+            )
 
-
-BLUE  = fg(153)
-RED   = fg(160)
-GRAY  = fg(245)
-RESET = attr('reset')
 
 class CustomArgumentParser(argparse.ArgumentParser):
     def print_help(self, file=None):
@@ -571,18 +608,24 @@ class CustomHelpFormatter(argparse.HelpFormatter):
 
     def _split_lines(self, text, width):
         split_text = text.split('\n')
+        #return [line for para in split_text for line in ansiwrap.wrap(para, width)]
         return [line for para in split_text for line in textwrap.wrap(para, width)]
 
     def _fill_text(self, text, width, indent):
         split_text = text.split('\n')
         return '\n'.join(
             line for para in split_text for line in textwrap.wrap(
+            #line for para in split_text for line in ansiwrap.wrap(
                 para, width, initial_indent=indent, subsequent_indent=indent
             )
         )
 
+    #def add_argument(self, action):
+    #       invocation_length = max(len(ANSI_ESCAPE.sub('', s)) for s in invocations)
+
     def _format_action_invocation(self, action):
         if not action.option_strings or action.nargs == 0:
+            #act_fmt = stylize(super()._format_action_invocation(action), GREEN)
             act_fmt = super()._format_action_invocation(action)
             if action.nargs == argparse.ONE_OR_MORE:
                 return f'{act_fmt} [...]'
@@ -590,6 +633,7 @@ class CustomHelpFormatter(argparse.HelpFormatter):
         else:
             default = self._get_default_metavar_for_optional(action)
             args_string = self._format_args(action, default)
+            #return ', '.join(stylize(a, GREEN) for a in action.option_strings) + ' %s' % args_string
             return ', '.join(action.option_strings) + ' %s' % args_string
 
 def parse_args() -> argparse.Namespace:
@@ -692,10 +736,23 @@ def main(
             media_sort = media_sort[:max_images]
 
         if not no_save_imgs:
-            lo.i(f'Saving images ({len(media_sort)})...')
+            to_save: List[Media] = []
             for m in media_sort:
-                # TODO print stdout
-                scraper.save_media(m)
+                shortcode = m.shortcode
+                fmatch = glob(THUMB_DIR + shortcode + '.*')
+                if not fmatch:
+                    to_save.append(m)
+                else:
+                    m.thumb_file = fmatch[0]
+
+            if not to_save:
+                lo.i('No new images to save')
+            else:
+                lo.i(f'Saving images ({len(to_save)})...')
+
+                for m in to_save:
+                    # TODO print stdout
+                    scraper.save_media(m)
 
         html = scraper.gen_html(prof, media_sort, page_images)
 
