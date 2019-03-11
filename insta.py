@@ -2,38 +2,9 @@
 
 """Fetch data from instagram and create custom HTML pages."""
 
-import argparse
-import hashlib
-import json
-import math
-import os
-import pickle
-import re
-import shutil
-import sys
-#import ansiwrap
-import textwrap
-import time
-from datetime import datetime
-from glob import glob
-from mimetypes import guess_extension
-from pprint import pformat
-from typing import Dict, List, Union
-
-import requests
-from colored import attr, fg, stylize
-from jinja2 import Environment, FileSystemLoader
-from utils.logs import log_init
 
 __version__ = 1.0
-
 DEFAULT_LOGLEVEL = 'INFO'
-lo = log_init(DEFAULT_LOGLEVEL)
-
-# todo: save data as pickle and load
-# todo: lazyload images
-
-# - Vars
 
 MAX_PAGES = 50
 MAX_IMGS = 250
@@ -46,7 +17,78 @@ PAGE_ITEMS = 16
 GRID_TYPE = 'md'
 MAX_CAPTION = 275  # TODO better in html?
 
-# -
+
+from my_utils.parsing import parser_init
+
+def parse_args():
+    parser = parser_init(
+        description=__doc__,
+        usage='%(prog)s [options] username [...]',
+        log_level=DEFAULT_LOGLEVEL,
+        version=__version__
+    )
+
+    parser.add_argument(
+        'username', nargs='+', type=str,
+        help='Instagram username'
+    )
+
+    grp_cache = parser.add_argument_group(title='Caching')
+
+    grp_cache.add_argument(
+        '-o', '--overwrite', action='store_true',
+        help='Overwrite existing metadata'
+    )
+    grp_cache.add_argument(
+        '-n', '--no-save-imgs', action='store_true',
+        help='Do not save thumbnails, use instagram URLs'
+    )
+
+    grp_limits = parser.add_argument_group(title='Limits')
+
+    grp_limits.add_argument( # none?
+        '-m', '--max-pages', type=int, default=MAX_PAGES, metavar='<num>', # add <num> as default?
+        help='Max pages to parse (default: %(default)d)'
+    )
+    grp_limits.add_argument(
+        '-i', '--max-images', type=int, default=MAX_IMGS, metavar='<num>',
+        help='Max images to display in HTML (default: %(default)d)'
+    )
+    grp_limits.add_argument(
+        '-p', '--page-images', type=int, default=PAGE_ITEMS, metavar='<num>',
+        help='Max images to display per page in HTML (default: %(default)d)'
+    )
+
+    return parser.parse_args()
+
+ARGS = None
+if __name__ == '__main__':
+    ARGS = parse_args()
+
+
+import hashlib
+import json
+import math
+import os
+import pickle
+import re
+import requests
+import time
+from datetime import datetime
+from glob import glob
+from mimetypes import guess_extension
+from pprint import pformat
+from typing import Dict, List, Union
+
+from jinja2 import Environment, FileSystemLoader
+from my_utils.logs import log_init
+
+
+lo = log_init(DEFAULT_LOGLEVEL)
+
+# todo: save data as pickle and load
+# todo: lazyload images
+
 
 SLEEP_DELAY = 1
 SLEEP_DELAY_IMG = 0.1
@@ -78,15 +120,6 @@ IMG_DIR = HTML_DIR + IMGS_DIRNAME
 THUMB_DIR = IMG_DIR + THUMB_DIRNAME
 
 HTML_TEMPLATE = 'main'
-
-#https://i.stack.imgur.com/KTSQa.png
-BLUE  = fg(153)
-RED   = fg(160)
-GREEN = fg(120)
-GRAY  = fg(245)
-RESET = attr('reset')
-
-ANSI_ESCAPE = re.compile(r'(\x9B|\x1B\[)[0-?]*[ -/]*[@-~]')
 
 
 class PartialContentException(Exception):
@@ -579,128 +612,6 @@ class InstaGet:
             )
 
 
-class CustomArgumentParser(argparse.ArgumentParser):
-    def print_help(self, file=None):
-        super().print_help(file)
-        if self.epilog and set(self.epilog) == {'\n'}:
-            self._print_message(self.epilog, file)
-
-    def exit(self, status=0, message=None):
-        if message:
-            self._print_message(f'\n{stylize(message, RED)}\n', sys.stderr)
-        sys.exit(status)
-
-    def error(self, message):
-        self.print_usage(sys.stderr)
-        self.exit(2, f'Error: {message}')
-
-
-class CustomHelpFormatter(argparse.HelpFormatter):
-    def __init__(self, prog):
-        width = min(shutil.get_terminal_size((80, 20))[0] - 2, 120)
-        max_help = 40
-        super().__init__(prog, max_help_position=max_help, width=width)
-
-    def add_usage(self, usage, actions, groups, prefix=None):
-        if prefix is None:
-            prefix = f'{stylize("Usage:", BLUE)}\n  '
-        return super().add_usage(usage, actions, groups, prefix)
-
-    def _split_lines(self, text, width):
-        split_text = text.split('\n')
-        #return [line for para in split_text for line in ansiwrap.wrap(para, width)]
-        return [line for para in split_text for line in textwrap.wrap(para, width)]
-
-    def _fill_text(self, text, width, indent):
-        split_text = text.split('\n')
-        return '\n'.join(
-            line for para in split_text for line in textwrap.wrap(
-            #line for para in split_text for line in ansiwrap.wrap(
-                para, width, initial_indent=indent, subsequent_indent=indent
-            )
-        )
-
-    #def add_argument(self, action):
-    #       invocation_length = max(len(ANSI_ESCAPE.sub('', s)) for s in invocations)
-
-    def _format_action_invocation(self, action):
-        if not action.option_strings or action.nargs == 0:
-            #act_fmt = stylize(super()._format_action_invocation(action), GREEN)
-            act_fmt = super()._format_action_invocation(action)
-            if action.nargs == argparse.ONE_OR_MORE:
-                return f'{act_fmt} [...]'
-            return act_fmt
-        else:
-            default = self._get_default_metavar_for_optional(action)
-            args_string = self._format_args(action, default)
-            #return ', '.join(stylize(a, GREEN) for a in action.option_strings) + ' %s' % args_string
-            return ', '.join(action.option_strings) + ' %s' % args_string
-
-def parse_args() -> argparse.Namespace:
-    parser = CustomArgumentParser(
-        description=f'{stylize(__doc__, GRAY)}',
-        usage=f'{stylize("%(prog)s [options] username [...]", BLUE)}',
-        formatter_class=CustomHelpFormatter,
-        add_help=False,
-        epilog='\n'
-    )
-
-    parser._positionals.title = 'Required'
-    parser._optionals.title = 'Flags'
-
-    parser.add_argument(
-        'username', nargs='+', type=str,
-        help='Instagram username'
-    )
-
-    grp_cache = parser.add_argument_group(title='Caching')
-
-    grp_cache.add_argument(
-        '-o', '--overwrite', action='store_true',
-        help='Overwrite existing metadata'
-    )
-    grp_cache.add_argument(
-        '-n', '--no-save-imgs', action='store_true',
-        help='Do not save thumbnails, use instagram URLs'
-    )
-
-    grp_limits = parser.add_argument_group(title='Limits')
-
-    grp_limits.add_argument( # none?
-        '-m', '--max-pages', type=int, default=MAX_PAGES, metavar='<num>', # add <num> as default?
-        help='Max pages to parse (default: %(default)d)'
-    )
-    grp_limits.add_argument(
-        '-i', '--max-images', type=int, default=MAX_IMGS, metavar='<num>',
-        help='Max images to display in HTML (default: %(default)d)'
-    )
-    grp_limits.add_argument(
-        '-p', '--page-images', type=int, default=PAGE_ITEMS, metavar='<num>',
-        help='Max images to display per page in HTML (default: %(default)d)'
-    )
-
-    grp_debug = parser.add_argument_group(title='Debug')
-
-    grp_debug.add_argument(
-        '-h', '--help', action='help', default=argparse.SUPPRESS,
-        help='Show this help message and exit'
-    )
-    grp_debug.add_argument(
-        '-v', '--version', action='version', version=f'{__version__}',
-        help="Show the version number and exit"
-    )
-    grp_debug.add_argument(
-        '-l', '--log-level', type=str, default=DEFAULT_LOGLEVEL.lower(), choices=[l.lower() for l in lo.levels], metavar='<lvl>',
-        help='Log level for output (default: %(default)s)\nChoices: {%(choices)s}'
-    )
-
-    return parser.parse_args()
-    # try:
-    # except SystemExit as err:
-    #     if err.code == 2:
-    #         parser.print_help()
-    #         sys.exit(2)
-
 
 def main(
     username: List[str], overwrite: bool, no_save_imgs: bool, max_pages: int, max_images: int, page_images: int, log_level: str, **_kw):
@@ -764,6 +675,5 @@ def main(
     lo.s('Done')
 
 if __name__ == '__main__':
-    args = parse_args()
-    dargs = vars(args)
+    dargs = vars(ARGS)
     main(**dargs)
