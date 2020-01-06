@@ -2,6 +2,10 @@ body {
     font-family: Ubuntu, Helvetica, sans-serif;
 }
 
+#all-imgs {
+    padding-top: 60px;
+}
+
 #all-imgs div.section {
     display: grid;
 }
@@ -10,14 +14,14 @@ body {
     grid-template-columns: repeat(auto-fit, minmax(285px, max-content));
     grid-auto-rows: minmax(150px, auto);
     grid-gap: 24px;
-    margin: 12px 24px;
+    margin: 0 24px 24px;
 }
 #all-imgs[data-gridtype="md"] div.section {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(400px, max-content));
     grid-auto-rows: minmax(200px, auto);
     grid-gap: 14px;
-    margin: 10px 14px;
+    margin: 0 14px 14px;
 }
 
 div.img {
@@ -143,6 +147,7 @@ div.datedown span.ico {
 
 .lum-lightbox {
     background: rgba(0, 0, 0, 0.75);
+    z-index: 3;
 }
 
 .lum-lightbox-inner {
@@ -179,9 +184,13 @@ div.datedown span.ico {
 }
 
 #pagination {
-    padding: 0 20px;
-    margin: 20px auto;
     text-align: center;
+    padding: 8px 0;
+    position: fixed;
+    top: 0;
+    width: 100%;
+    z-index: 2;
+    background-color: white;
 }
 
 #pagination-compact {

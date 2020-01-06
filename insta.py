@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 
 """Fetch data from instagram and create custom HTML pages."""
+from zmq.tests.test_security import USER
 
-
-__version__ = 1.0
+__version__ = 1.1
 DEFAULT_LOGLEVEL = 'INFO'
 
 MAX_PAGES = 50
-MAX_IMGS = 250
+MAX_IMGS = 350
 
 #RELOAD = False
 
-#PAGE_ITEMS = 20
-#GRID_TYPE = 'sm' # TODO does not work with video, too wide text for subdata
-PAGE_ITEMS = 16
-GRID_TYPE = 'md'
+PAGE_ITEMS = 20
+#PAGE_ITEMS = 16
+GRID_TYPE = 'sm' # TODO does not work with video, too wide text for subdata
+#GRID_TYPE = 'md'
 MAX_CAPTION = 275  # TODO better in html?
 
 
@@ -83,27 +83,36 @@ from typing import Dict, List, Union
 from jinja2 import Environment, FileSystemLoader
 from my_utils.logs import log_init
 
+# todo can I just do this instead?
+# import logging
+# logging.basicConfig(level=logging.DEBUG)
+
 
 lo = log_init(DEFAULT_LOGLEVEL)
 
 # todo: save data as pickle and load
-# todo: lazyload images
+#   lazyload images
+#   fix ratelimiting at 20 requests?
+#   filter by video
+#   stories?
 
 
-SLEEP_DELAY = 1
+SLEEP_DELAY = 1.1
 SLEEP_DELAY_IMG = 0.1
 CONNECT_TIMEOUT = 3
 MAX_RETRIES = 3
 RETRY_DELAY = 2
 
 BASE_URL = 'https://www.instagram.com/'
-GQL_URL = BASE_URL + 'graphql/query/?query_hash=f2405b236d85e8296cf30347c9f08c2a&variables={}'
+GQL_URL = BASE_URL + 'graphql/query/?query_hash=42323d64886122307be10013ad2dcc44&variables={}'
 GQL_VARS_FIRST = '{{"id":"{0}","first":50}}'
 GQL_VARS = '{{"id":"{0}","first":50,"after":"{1}"}}'
 
 #https://www.instagram.com/user/?__a=1 ? seems to be working again. rate limited?
 
-USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.87 Safari/537.36'
+#USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.87 Safari/537.36'
+USER_AGENT = 'Instagram 52.0.0.8.83 (iPhone; CPU iPhone OS 11_4 like Mac OS X; en_US; en-US; scale=2.00; 750x1334) AppleWebKit/605.1.15'
+STORIES_UA = 'Instagram 52.0.0.8.83 (iPhone; CPU iPhone OS 11_4 like Mac OS X; en_US; en-US; scale=2.00; 750x1334) AppleWebKit/605.1.15'
 
 COOKIE_NAME = 'cookies'
 
@@ -167,7 +176,7 @@ class InstaGet:
         self.session.cookies.set('ig_pr', '1')
 
         self.cookies = None
-        self.rhx_gis = None
+        self.rhx_gis = ''
         self.is_authed = False
 
         self.last_request = None
@@ -294,10 +303,14 @@ class InstaGet:
             return resp.text  # todo: json?
 
     def auth(self):
-        self.session.headers.update({'Referer': BASE_URL})
+        self.session.headers.update({'Referer': BASE_URL, 'user-agent': STORIES_UA})
         req = self.safe_get(BASE_URL)
+
         if req:
             self.session.headers.update({'X-CSRFToken': req.cookies['csrftoken']})
+            self.session.headers.update({'user-agent': USER_AGENT})
+
+            self.rhx_gis = ''
             self.is_authed = True
         else:
             lo.e('Could not auth.')
@@ -317,7 +330,7 @@ class InstaGet:
             filepath = f'{PICKLE_DIR}{username}/{filepath.replace(".pkl","")}.pkl'
 
         if not os.path.exists(filepath):
-            lo.e(f'Could not find pickle for {filepath}')
+            lo.w(f'Could not find pickle for {filepath}')
             return
 
         with open(filepath, 'rb') as f:
@@ -328,7 +341,8 @@ class InstaGet:
             try:
                 shared_data = data.split("window._sharedData = ")[1].split(";</script>")[0]
                 data_json = json.loads(shared_data)
-                self.rhx_gis = data_json['rhx_gis']
+                self.rhx_gis = ''
+                #self.rhx_gis = data_json['rhx_gis']
                 return data_json
             except (TypeError, KeyError, IndexError) as e:
                 lo.e(f'Exception {e} getting sharedData in response')
@@ -448,7 +462,7 @@ class InstaGet:
 
     def fetch_profile(self):
         lo.i('Parsing profile...')
-        url = BASE_URL + self.user
+        url = BASE_URL + self.user + '/'
 
         resp = self.get_txt(url)
         #if resp is None:
@@ -543,7 +557,8 @@ class InstaGet:
         profile_data = self.convert_profile(page_data)
         lo.v('\n' + pformat(profile_data, indent=4))
 
-        # technically wrong if max images too high, past last page
+        # todo technically wrong if max images too high, past last page
+        #   also if max imgs is 250, request 10 then 11, skips
         if not all_media or len(all_media) < max_images:
             if not shared_data:
                 resp = self.fetch_profile()
@@ -667,10 +682,12 @@ def main(
 
         html = scraper.gen_html(prof, media_sort, page_images)
 
-        filename = HTML_DIR + user + '.html'
-        with open(filename, 'w') as f:
-            f.writelines(html)
-            lo.s(f'Wrote to {filename}')
+        if html:
+            filename = HTML_DIR + user + '.html'
+            with open(filename, 'w') as f:
+                f.writelines(html)
+                lo.s(f'Wrote file: http://127.0.0.1:9999/{user}.html')
+                lo.i('(make sure python is running with: cd ~/dev/instagram/html && python -m http.server 9999 --bind 127.0.0.1')
 
     lo.s('Done')
 
