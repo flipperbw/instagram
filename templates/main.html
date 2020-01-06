@@ -14,6 +14,36 @@
 <body>
     {% set data_len = all_data | length %}
 
+    <div id="all-imgs" data-gridtype="{{ grid_type }}">
+    {% for n in range(0, data_len, max_items) %}
+        <div id="section-{{ (n // max_items) + 1 }}" class="section" style="display: none;">
+        {% for data in all_data[n: n + max_items] %}
+            <div id="img-{{ loop.index + n }}" class="img lum-loading">
+                <a class="zimg" href="{{ data.big_url }}" data-isvid="{{ data.is_video }}">
+                    <div class="lum-lightbox-loader"></div>
+                    <img data-src="{{ data.small_url }}" src="" class="hidden" alt="Instagram image" />
+                    <div class="txt hidden">{{ data.caption }}{% if data.location %} &nbsp;&#8226;&nbsp; Location: {{ data.location }}{% endif %}</div>
+                </a>
+                <div class="left">
+                    <span class="likes">{{ "{:,}".format(data.likes) }}</span>
+                    {% if data.is_video %}
+                    <span data-icon="&#128253;" class="ico"></span>
+                    <span class="small hidden">{{ "{:,}".format(data.video_views) }}</span>
+                    {% endif %}
+                </div>
+                <div class="datedown hidden">
+                    <span class="dates">{{ data.date }}</span>
+                    <a target="_blank" href="{{ data.big_url }}">
+                        <span data-icon="&#127758;" class="ico external"></span>
+                    </a>
+                    <span data-icon="&#128190;" class="ico download" data-dlurl="{{ data.save_url }}"></span>
+                </div>
+            </div>
+        {% endfor %}
+        </div>
+    {% endfor %}
+    </div>
+
     <div id="pagination" class="clearfix">
         <div id="pagination-compact">
             <ul>
@@ -35,36 +65,6 @@
                 </li>
             </ul>
         </div>
-    </div>
-
-    <div id="all-imgs" data-gridtype="{{ grid_type }}">
-    {% for n in range(0, data_len, max_items) %}
-        <div id="section-{{ (n // max_items) + 1 }}" class="section" style="display: none;">
-        {% for data in all_data[n: n + max_items] %}
-            <div id="img-{{ loop.index + n }}" class="img lum-loading">
-                <a class="zimg" href="{{ data.big_url }}" data-isvid="{{ data.is_video }}">
-                    <div class="lum-lightbox-loader"></div>
-                    <img data-src="{{ data.small_url }}" src="" class="hidden" />
-                    <div class="txt hidden">{{ data.caption }}{% if data.location %} &nbsp;&#8226;&nbsp; Location: {{ data.location }}{% endif %}</div>
-                </a>
-                <div class="left">
-                    <span class="likes">{{ "{:,}".format(data.likes) }}</span>
-                    {% if data.is_video %}
-                    <span data-icon="&#128253;" class="ico"></span>
-                    <span class="small hidden">{{ "{:,}".format(data.video_views) }}</span>
-                    {% endif %}
-                </div>
-                <div class="datedown hidden">
-                    <span class="dates">{{ data.date }}</span>
-                    <a target="_blank" href="{{ data.big_url }}">
-                        <span data-icon="&#127758;" class="ico external"></span>
-                    </a>
-                    <span data-icon="&#128190;" class="ico download" data-dlurl="{{ data.save_url }}"></span>
-                </div>
-            </div>
-        {% endfor %}
-        </div>
-    {% endfor %}
     </div>
 
 </body>

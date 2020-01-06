@@ -3,7 +3,7 @@ body {
 }
 
 #all-imgs {
-    padding-top: 60px;
+    margin-bottom: 60px;
 }
 
 #all-imgs div.section {
@@ -14,14 +14,13 @@ body {
     grid-template-columns: repeat(auto-fit, minmax(285px, max-content));
     grid-auto-rows: minmax(150px, auto);
     grid-gap: 24px;
-    margin: 0 24px 24px;
+    margin: 12px 24px 24px;
 }
 #all-imgs[data-gridtype="md"] div.section {
-    display: grid;
     grid-template-columns: repeat(auto-fit, minmax(400px, max-content));
     grid-auto-rows: minmax(200px, auto);
     grid-gap: 14px;
-    margin: 0 14px 14px;
+    margin: 7px 14px 14px;
 }
 
 div.img {
@@ -187,10 +186,10 @@ div.datedown span.ico {
     text-align: center;
     padding: 8px 0;
     position: fixed;
-    top: 0;
+    bottom: 0;
     width: 100%;
     z-index: 2;
-    background-color: white;
+    background: rgba(242, 242, 243, 0.9);
 }
 
 #pagination-compact {

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """Fetch data from instagram and create custom HTML pages."""
-from zmq.tests.test_security import USER
+#from zmq.tests.test_security import USER
 
 __version__ = 1.1
 DEFAULT_LOGLEVEL = 'INFO'
@@ -11,10 +11,6 @@ MAX_IMGS = 350
 
 #RELOAD = False
 
-PAGE_ITEMS = 20
-#PAGE_ITEMS = 16
-GRID_TYPE = 'sm' # TODO does not work with video, too wide text for subdata
-#GRID_TYPE = 'md'
 MAX_CAPTION = 275  # TODO better in html?
 
 
@@ -54,10 +50,18 @@ def parse_args():
         '-i', '--max-images', type=int, default=MAX_IMGS, metavar='<num>',
         help='Max images to display in HTML (default: %(default)d)'
     )
-    grp_limits.add_argument(
-        '-p', '--page-images', type=int, default=PAGE_ITEMS, metavar='<num>',
-        help='Max images to display per page in HTML (default: %(default)d)'
+
+    grp_output = parser.add_argument_group(title='Output')
+
+    grp_output.add_argument(
+        '-s', '--size', choices=['sm', 'md'], default='md', metavar='<size>',
+        help='Size of images in HTML output (default: %(default)s)\nChoices: {%(choices)s}'
     )
+    grp_output.add_argument(
+        '-r', '--rows', type=int, default=4, metavar='<num>',
+        help='Max rows for images in HTML (default: %(default)d)'
+    )
+    # todo: sm does not work with video
 
     return parser.parse_args()
 
@@ -78,7 +82,7 @@ from datetime import datetime
 from glob import glob
 from mimetypes import guess_extension
 from pprint import pformat
-from typing import Dict, List, Union
+from typing import Dict, List, Union, Optional
 
 from jinja2 import Environment, FileSystemLoader
 from my_utils.logs import log_init
@@ -95,6 +99,8 @@ lo = log_init(DEFAULT_LOGLEVEL)
 #   fix ratelimiting at 20 requests?
 #   filter by video
 #   stories?
+#   fix limit of nav numbers so there is a ... if they overlap
+#   why is video_url missing now? login?
 
 
 SLEEP_DELAY = 1.1
@@ -154,7 +160,7 @@ class Media:
         self.location: Dict[str, Union[str, bool]] = info['location']  # id: int, has_public_page: bool, name: str, slug: str
 
         #self.mimetype: str = None
-        self.thumb_file: str = None
+        self.thumb_file: Optional[str] = None
         #self.content = None  # todo do i need this? and make these all thumb_
 
     def __str__(self):
@@ -181,7 +187,7 @@ class InstaGet:
 
         self.last_request = None
 
-        self.user: str = None
+        self.user: Optional[str] = None
 
         self.jinja_env = Environment(
             loader=FileSystemLoader(TEMPLATE_DIR),
@@ -342,7 +348,6 @@ class InstaGet:
                 shared_data = data.split("window._sharedData = ")[1].split(";</script>")[0]
                 data_json = json.loads(shared_data)
                 self.rhx_gis = ''
-                #self.rhx_gis = data_json['rhx_gis']
                 return data_json
             except (TypeError, KeyError, IndexError) as e:
                 lo.e(f'Exception {e} getting sharedData in response')
@@ -441,7 +446,7 @@ class InstaGet:
 
     def update_ig_gis_header(self, params):
         data = self.rhx_gis + ":" + params
-        ig_gis = hashlib.md5(data.encode('utf-8')).hexdigest()
+        ig_gis = hashlib.md5(data.encode()).hexdigest()
         self.session.headers.update({'x-instagram-gis': ig_gis})
 
     def get_gql(self, qid, end_cursor):
@@ -573,12 +578,19 @@ class InstaGet:
 
         return profile_data, all_media
 
-    def gen_html(self, _prof: dict, media_sort: List[Media], page_images = PAGE_ITEMS, template_name = HTML_TEMPLATE):
+    def gen_html(self, _prof: dict, media_sort: List[Media], rows, size, template_name = HTML_TEMPLATE):
         lo.i('Creating html...')
 
         env = self.jinja_env
         template = env.get_template(f'{template_name}.html')
         re_html = re.compile(r'^{}'.format(HTML_DIR))
+
+        if size == 'sm':
+            max_items = rows * 5
+        else:
+            max_items = rows * 4
+            if size != 'md':
+                lo.e('Invalid size, using "md"')
 
         all_data = []
         for m in media_sort:
@@ -623,13 +635,13 @@ class InstaGet:
             lo.w('No media to display.')
         else:
             return template.render(
-                all_data=all_data, user=self.user, max_items=page_images, grid_type=GRID_TYPE
+                all_data=all_data, user=self.user, max_items=max_items, grid_type=size
             )
 
 
 
 def main(
-    username: List[str], overwrite: bool, no_save_imgs: bool, max_pages: int, max_images: int, page_images: int, log_level: str, **_kw):
+    username: List[str], overwrite: bool, no_save_imgs: bool, max_pages: int, max_images: int, rows: int, size: str, log_level: str, **_kw):
 
     #todo allow int
     log_level = log_level.upper()
@@ -680,7 +692,7 @@ def main(
                     # TODO print stdout
                     scraper.save_media(m)
 
-        html = scraper.gen_html(prof, media_sort, page_images)
+        html = scraper.gen_html(prof, media_sort, rows, size)
 
         if html:
             filename = HTML_DIR + user + '.html'
