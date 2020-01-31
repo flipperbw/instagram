@@ -7,7 +7,7 @@ __version__ = 1.1
 DEFAULT_LOGLEVEL = 'INFO'
 
 MAX_PAGES = 50
-MAX_IMGS = 350
+MAX_IMGS = 500
 
 #RELOAD = False
 
@@ -87,7 +87,7 @@ from typing import Dict, List, Union, Optional
 from jinja2 import Environment, FileSystemLoader
 from my_utils.logs import log_init
 
-# todo can I just do this instead?
+# todo can I just do this instead? causes requests to show
 # import logging
 # logging.basicConfig(level=logging.DEBUG)
 
@@ -101,6 +101,7 @@ lo = log_init(DEFAULT_LOGLEVEL)
 #   stories?
 #   fix limit of nav numbers so there is a ... if they overlap
 #   why is video_url missing now? login?
+#   include link to original post
 
 
 SLEEP_DELAY = 1.1
@@ -586,9 +587,10 @@ class InstaGet:
         re_html = re.compile(r'^{}'.format(HTML_DIR))
 
         if size == 'sm':
-            max_items = rows * 5
+            #TODO this depends on screen resolution
+            max_items = rows * 7  # 5 for 1080p
         else:
-            max_items = rows * 4
+            max_items = rows * 5  # 4 for 1080p
             if size != 'md':
                 lo.e('Invalid size, using "md"')
 

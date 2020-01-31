@@ -10,6 +10,8 @@ body {
     display: grid;
 }
 
+/* TODO: this depends on screen size... */
+
 #all-imgs[data-gridtype="sm"] div.section {
     grid-template-columns: repeat(auto-fit, minmax(285px, max-content));
     grid-auto-rows: minmax(150px, auto);
