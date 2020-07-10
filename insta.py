@@ -81,6 +81,7 @@ import time
 from datetime import datetime
 from glob import glob
 from mimetypes import guess_extension
+from pathlib import Path
 from pprint import pformat
 from typing import Dict, List, Union, Optional
 
@@ -104,6 +105,9 @@ lo = log_init(DEFAULT_LOGLEVEL)
 #   include link to original post
 
 
+# for sidecar:
+# edge_sidecar_to_children -> edges, only displayUrl
+
 SLEEP_DELAY = 1.1
 SLEEP_DELAY_IMG = 0.1
 CONNECT_TIMEOUT = 3
@@ -115,13 +119,18 @@ GQL_URL = BASE_URL + 'graphql/query/?query_hash=42323d64886122307be10013ad2dcc44
 GQL_VARS_FIRST = '{{"id":"{0}","first":50}}'
 GQL_VARS = '{{"id":"{0}","first":50,"after":"{1}"}}'
 
+LOGIN_URL = BASE_URL + 'accounts/login/ajax/'
+VIEW_MEDIA_URL = BASE_URL + 'p/{0}/?__a=1'
+
 #https://www.instagram.com/user/?__a=1 ? seems to be working again. rate limited?
 
-#USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.87 Safari/537.36'
-USER_AGENT = 'Instagram 52.0.0.8.83 (iPhone; CPU iPhone OS 11_4 like Mac OS X; en_US; en-US; scale=2.00; 750x1334) AppleWebKit/605.1.15'
-STORIES_UA = 'Instagram 52.0.0.8.83 (iPhone; CPU iPhone OS 11_4 like Mac OS X; en_US; en-US; scale=2.00; 750x1334) AppleWebKit/605.1.15'
+USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.87 Safari/537.36'
+#USER_AGENT = 'Instagram 123.0.0.21.114 (iPhone; CPU iPhone OS 11_4 like Mac OS X; en_US; en-US; scale=2.00; 750x1334) AppleWebKit/605.1.15'
+STORIES_UA = 'Instagram 123.0.0.21.114 (iPhone; CPU iPhone OS 11_4 like Mac OS X; en_US; en-US; scale=2.00; 750x1334) AppleWebKit/605.1.15'
 
 COOKIE_NAME = 'cookies'
+
+CREDENTIALS_FILE = Path('./.creds')
 
 PICKLE_DIRNAME = 'pkls/'
 TEMPLATE_DIRNAME = 'templates/'
@@ -158,7 +167,7 @@ class Media:
         self.comments: int = info['comments']
         self.captions: List[str] = info['captions']
         self.dimensions: Dict[str, int] = info['dimensions']  # height, width
-        self.location: Dict[str, Union[str, bool]] = info['location']  # id: int, has_public_page: bool, name: str, slug: str
+        self.location: Dict[str, Union[str, bool]] = info['location']  # id: int, has_public_page: bool, name: str, slug: str, address_json: strjson
 
         #self.mimetype: str = None
         self.thumb_file: Optional[str] = None
@@ -185,6 +194,16 @@ class InstaGet:
         self.cookies = None
         self.rhx_gis = ''
         self.is_authed = False
+        self.logged_in = False
+
+        if CREDENTIALS_FILE.is_file():
+            login_info = CREDENTIALS_FILE.read_text().splitlines()
+            self.login_user = login_info[0]
+            self.login_pass = login_info[1]
+            print(self.login_user)
+        else:
+            self.login_user = None
+            self.login_pass = None
 
         self.last_request = None
 
@@ -297,12 +316,12 @@ class InstaGet:
 
             lo.d(f'Saved {media.thumb_file}')
 
-    def get_txt(self, url: str, is_json: bool = False):
-        resp = self.safe_get(url)
+    def get_txt(self, url: str, is_json: bool = False, **kwargs) -> Optional[Union[dict, str]]:
+        resp = self.safe_get(url, **kwargs)
 
         if resp is None:
             lo.e(f'No data for {url}')
-            return
+            return None
 
         if is_json:
             return resp.json()
@@ -321,6 +340,38 @@ class InstaGet:
             self.is_authed = True
         else:
             lo.e('Could not auth.')
+
+    def auth_user(self):
+        self.session.headers.update({'Referer': BASE_URL, 'user-agent': STORIES_UA})
+        req = self.safe_get(BASE_URL)
+
+        if req:
+            self.session.headers.update({'X-CSRFToken': req.cookies['csrftoken']})
+
+            login_data = {'username': self.login_user, 'password': self.login_pass}
+            login = self.session.post(LOGIN_URL, data=login_data, allow_redirects=True)
+
+            self.session.headers.update({'X-CSRFToken': login.cookies['csrftoken']})
+            self.cookies = login.cookies
+            login_text = json.loads(login.text)
+
+            if login_text.get('authenticated') and login.status_code == 200:
+                self.logged_in = True
+                self.is_authed = True
+                self.session.headers.update({'user-agent': USER_AGENT})
+                self.rhx_gis = ""
+            else:
+                lo.e('Login failed for ' + self.login_user)
+
+                if 'checkpoint_url' in login_text:
+                    checkpoint_url = login_text.get('checkpoint_url')
+                    lo.e('Please verify your account at ' + BASE_URL[0:-1] + checkpoint_url)
+                elif 'errors' in login_text:
+                    for count, error in enumerate(login_text['errors'].get('error')):
+                        count += 1
+                        lo.d('Session error %(count)s: "%(error)s"' % locals())
+                else:
+                    lo.e(json.dumps(login_text))
 
     def to_pickle(self, data: dict, filename: str):
         username = self.user or '_nouser'
@@ -394,6 +445,15 @@ class InstaGet:
 
         return Media(**info)
 
+    def _get_media_details(self, shortcode: str):
+        resp = self.get_txt(VIEW_MEDIA_URL.format(shortcode), is_json=True, secs=SLEEP_DELAY_IMG)
+
+        if not resp:
+            lo.e('Failed to get media details for ' + shortcode)
+            return
+
+        return resp
+
     def get_media(self, data: dict, first: bool = False):
         if not data:
             return
@@ -427,14 +487,29 @@ class InstaGet:
             node = edge.get('node', {})
 
             fn = node.get('shortcode', '_none')
-            if fn != '_none':
+            if fn == '_none':
+                lo.e(f'_none shortcode for {node}')
+            else:
+                # run every time? gets location
+                n_miss_loc = node.get('location') is None
+                n_miss_vid = node.get('is_video') is True and node.get('video_url') is None
+                if n_miss_loc or n_miss_vid:
+                    details = self._get_media_details(fn)
+
+                    details_data = details.get('graphql', {}).get('shortcode_media', {})
+                    if n_miss_loc:
+                        node['location'] = details_data.get('location')
+                    if n_miss_vid:
+                        node['video_url'] = details_data.get('video_url')
+
                 fn = 'm_' + fn
 
-            self.to_pickle(node, fn)
+                # move under else?
+                self.to_pickle(node, fn)
 
-            info = self.convert_node(node)
+                info = self.convert_node(node)
 
-            media_list.append(info)
+                media_list.append(info)
 
         ret['media_list'] = media_list
 
@@ -458,7 +533,7 @@ class InstaGet:
 
         self.update_ig_gis_header(params)
 
-        resp = self.get_txt(GQL_URL.format(params), is_json=True)
+        resp: dict = self.get_txt(GQL_URL.format(params), is_json=True)
         if not resp:
             data = {}
         else:
@@ -529,7 +604,11 @@ class InstaGet:
 
         lo.i('Authing...')
 
-        self.auth()
+        if self.login_user and self.login_pass:
+            self.auth_user()
+        else:
+            self.auth()
+
         if not self.is_authed:
             return
 
@@ -643,8 +722,8 @@ class InstaGet:
 
 
 def main(
-    username: List[str], overwrite: bool, no_save_imgs: bool, max_pages: int, max_images: int, rows: int, size: str, log_level: str, **_kw):
-
+    username: List[str], overwrite: bool, no_save_imgs: bool, max_pages: int, max_images: int, rows: int, size: str, log_level: str, **_kw
+):
     #todo allow int
     log_level = log_level.upper()
     if log_level != DEFAULT_LOGLEVEL:
