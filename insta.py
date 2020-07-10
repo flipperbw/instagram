@@ -53,6 +53,7 @@ def parse_args():
 
     grp_output = parser.add_argument_group(title='Output')
 
+    # todo: sm does not work with video
     grp_output.add_argument(
         '-s', '--size', choices=['sm', 'md'], default='md', metavar='<size>',
         help='Size of images in HTML output (default: %(default)s)\nChoices: {%(choices)s}'
@@ -61,7 +62,10 @@ def parse_args():
         '-r', '--rows', type=int, default=4, metavar='<num>',
         help='Max rows for images in HTML (default: %(default)d)'
     )
-    # todo: sm does not work with video
+    grp_output.add_argument(
+        '-g', '--get-location', action='store_true',
+        help='Fetch location data (takes longer)'
+    )
 
     return parser.parse_args()
 
@@ -101,7 +105,6 @@ lo = log_init(DEFAULT_LOGLEVEL)
 #   filter by video
 #   stories?
 #   fix limit of nav numbers so there is a ... if they overlap
-#   why is video_url missing now? login?
 #   include link to original post
 
 
@@ -160,13 +163,13 @@ class Media:
         self.is_video: bool = info['is_video']
         self.video_url: str = info['video_url']
         self.video_view_count: int = info['video_view_count']
-        self.accessibility_caption: str = info['accessibility_caption']
-        self.comments_disabled: bool = info['comments_disabled']
+        #self.accessibility_caption: str = info['accessibility_caption']
+        #self.comments_disabled: bool = info['comments_disabled']
         self.taken_at_timestamp: int = info['taken_at_timestamp']
         self.likes: int = info['likes']
-        self.comments: int = info['comments']
+        #self.comments: int = info['comments']
         self.captions: List[str] = info['captions']
-        self.dimensions: Dict[str, int] = info['dimensions']  # height, width
+        #self.dimensions: Dict[str, int] = info['dimensions']  # height, width
         self.location: Dict[str, Union[str, bool]] = info['location']  # id: int, has_public_page: bool, name: str, slug: str, address_json: strjson
 
         #self.mimetype: str = None
@@ -200,7 +203,6 @@ class InstaGet:
             login_info = CREDENTIALS_FILE.read_text().splitlines()
             self.login_user = login_info[0]
             self.login_pass = login_info[1]
-            print(self.login_user)
         else:
             self.login_user = None
             self.login_pass = None
@@ -208,6 +210,7 @@ class InstaGet:
         self.last_request = None
 
         self.user: Optional[str] = None
+        self.get_location = False
 
         self.jinja_env = Environment(
             loader=FileSystemLoader(TEMPLATE_DIR),
@@ -424,14 +427,22 @@ class InstaGet:
 
     @staticmethod
     def convert_node(node: dict):
+        is_sidecar = node.get('__typename')
+        if is_sidecar == 'GraphSidecar':
+            lo.v(f'sidecar: {node.get("shortcode")}')
+            # get id, is_video, video_url, display_url
+            # TODO change this function to yield media
+            # need to grab edge_sidecar_to_children from details
+
         info = {
             k: node.get(k) for k in
             ('id', 'shortcode', 'display_url', 'thumbnail_src', 'is_video', 'video_url', 'video_view_count',
-             'accessibility_caption', 'comments_disabled', 'dimensions', 'location', 'taken_at_timestamp')
+             #'accessibility_caption', 'dimensions', 'comments_disabled',
+             'location', 'taken_at_timestamp')
         }
 
         info['likes'] = node.get('edge_media_preview_like', {}).get('count')
-        info['comments'] = node.get('edge_media_to_comment', {}).get('count')
+        #info['comments'] = node.get('edge_media_to_comment', {}).get('count')
 
         # todo: is this ever more than 1?
         #       combine to comprehension
@@ -490,8 +501,10 @@ class InstaGet:
             if fn == '_none':
                 lo.e(f'_none shortcode for {node}')
             else:
-                # run every time? gets location
-                n_miss_loc = node.get('location') is None
+                if self.get_location:
+                    n_miss_loc = node.get('location') is None
+                else:
+                    n_miss_loc = False
                 n_miss_vid = node.get('is_video') is True and node.get('video_url') is None
                 if n_miss_loc or n_miss_vid:
                     details = self._get_media_details(fn)
@@ -592,7 +605,7 @@ class InstaGet:
         return all_media
 
     def scrape(
-        self, user: str = None, max_pages: int = MAX_PAGES, max_images: int = MAX_IMGS, overwrite: bool = False
+        self, user: str = None, max_pages: int = MAX_PAGES, max_images: int = MAX_IMGS, overwrite: bool = False, get_location: bool = False
     ):
         if not user:
             user = self.user
@@ -611,6 +624,8 @@ class InstaGet:
 
         if not self.is_authed:
             return
+
+        self.get_location = get_location
 
         if overwrite:
             shared_data = None
@@ -722,7 +737,7 @@ class InstaGet:
 
 
 def main(
-    username: List[str], overwrite: bool, no_save_imgs: bool, max_pages: int, max_images: int, rows: int, size: str, log_level: str, **_kw
+    username: List[str], overwrite: bool, no_save_imgs: bool, max_pages: int, max_images: int, rows: int, size: str, get_location: bool, log_level: str, **_kw
 ):
     #todo allow int
     log_level = log_level.upper()
@@ -740,7 +755,7 @@ def main(
             lo.w(f'Lowering max images from {max_images} to {total_possible_imgs}')
             max_images = total_possible_imgs
 
-        data = scraper.scrape(max_pages=max_pages, max_images=max_images, overwrite=overwrite)
+        data = scraper.scrape(max_pages=max_pages, max_images=max_images, overwrite=overwrite, get_location=get_location)
         scraper.save_cookies()
 
         if data is None:
